@@ -1,21 +1,20 @@
 const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 const express = require('express');
 
-// 1. Serwer HTTP dla Render.com + auto-ping (zapobiega uśpieniu bota po 15 minutach)
+// Serwer HTTP dla Render.com + auto-ping
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.get('/', (req, res) => res.send('Bot Ziomeczki.gg działa!'));
 app.listen(PORT, () => console.log(`Serwer HTTP na porcie ${PORT}`));
 
-// Samopinging (co 10 minut bot "odwiedza" samego siebie, żeby Render go nie uśpił)
+// Samopinging (zapobiega uśpieniu bota przez Render)
 setInterval(() => {
   if (process.env.RENDER_EXTERNAL_URL) {
     fetch(process.env.RENDER_EXTERNAL_URL).catch(() => {});
   }
 }, 10 * 60 * 1000);
 
-// Inicjalizacja bota
 const client = new Client({ 
   intents: [
     GatewayIntentBits.Guilds, 
@@ -34,18 +33,16 @@ const COUNTING_CHANNEL_ID = '1532453185413972038';
 let currentCount = 0;
 let lastUserId = null;
 
-// Słownik aktywnych zadań weryfikacyjnych (pytania matematyczne)
 const activeCaptchas = new Map();
 
 client.on('ready', () => {
   console.log(`Zalogowano jako ${client.user.tag}! Bot gotowy do pracy.`);
 });
 
-// --- SYSTEM WERYFIKACJI (MATEMATYCZNY CAPTCHA) ---
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
 
-  // Komenda wysyłająca panel weryfikacji
+  // Komenda weryfikacji
   if (message.content === '!setup-weryfikacja' && message.channel.id === VERIFY_CHANNEL_ID) {
     const embed = new EmbedBuilder()
       .setTitle('Weryfikacja Bezpieczeństwa')
@@ -66,27 +63,29 @@ client.on('messageCreate', async message => {
 
   // --- SYSTEM LICZENIA ---
   if (message.channel.id === COUNTING_CHANNEL_ID) {
-    // Sprawdzamy czy to czysta liczba
     const number = parseInt(message.content.trim());
     
+    // Jeśli to nie liczba albo zawiera dodatkowy tekst -> usuń
     if (isNaN(number) || message.content.trim() !== number.toString()) {
       await message.delete().catch(() => {});
       return;
     }
 
-    // Sprawdzamy czy to kolejna liczba
+    // Jeśli to zła kolejność (np. po 1 napisał 5) -> usuń wiadomość i daj reakcję
     if (number !== currentCount + 1) {
-      await message.react('❌').catch(() => {});
+      await message.delete().catch(() => {});
+      // Opcjonalnie wysłanie tymczasowej reakcji/wiadomości niemożliwe po usunięciu, 
+      // ale bot może wysłać i szybko usunąć powiadomienie lub po prostu usunąć błąd.
       return;
     }
 
-    // Sprawdzamy czy ta sama osoba nie pisze pod rząd
+    // Jeśli ta sama osoba pisze pod rząd -> usuń wiadomość
     if (message.author.id === lastUserId) {
-      await message.react('⚠️').catch(() => {});
+      await message.delete().catch(() => {});
       return;
     }
 
-    // Zaliczenie liczby
+    // Poprawna liczba
     currentCount = number;
     lastUserId = message.author.id;
     await message.react('✅').catch(() => {});
@@ -112,7 +111,6 @@ client.on('interactionCreate', async interaction => {
 
     await interaction.reply({ embeds: [embed], ephemeral: true });
 
-    // Oczekiwanie na odpowiedź użytkownika na kanale
     const filter = m => m.author.id === interaction.user.id;
     const collector = interaction.channel.createMessageCollector({ filter, time: 120000, max: 1 });
 
@@ -127,7 +125,6 @@ client.on('interactionCreate', async interaction => {
       if (userAns === correctAnswer) {
         activeCaptchas.delete(interaction.user.id);
 
-        // Zmiana ról
         await member.roles.remove(ROLE_REMOVE_ID).catch(console.error);
         await member.roles.add(ROLE_ADD_ID).catch(console.error);
 
