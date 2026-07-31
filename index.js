@@ -24,7 +24,7 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildInvites // <--- WYMAGANE DO ŚLEDZENIA ZAPROSZEŃ
+    GatewayIntentBits.GuildInvites
   ] 
 });
 
@@ -60,9 +60,8 @@ if (fs.existsSync(CONFIG_FILE)) {
   } catch (e) {}
 }
 
-// Kolekcja do śledzenia zaproszeń [kod_zaproszenia -> liczba_użyć]
+// Kolekcja do śledzenia zaproszeń
 const invitesCache = new Map();
-// Baza danych zaproszeń [userId -> { total: 0, left: 0, current: 0 }]
 const invitesFile = path.join(__dirname, 'invites.json');
 let userInvites = new Map();
 
@@ -79,20 +78,17 @@ function saveInvites() {
 }
 
 const activeCaptchas = new Map();
-const giveawayParticipants = new Map();
+const giveawayParticipants = new Map(); // Przechowuje uczestników dla każdego konkursu osobno
 const tempVoiceChannels = new Set();
 
 client.on('ready', async () => {
   console.log(`Zalogowano jako ${client.user.tag}! Bot gotowy do pracy.`);
 
-  // Cacheowanie zaproszeń dla wszystkich serwerów
   for (const guild of client.guilds.cache.values()) {
     try {
       const firstInvites = await guild.invites.fetch();
       invitesCache.set(guild.id, new Map(firstInvites.map(inv => [inv.code, inv.uses])));
-    } catch (err) {
-      console.error(`Nie udało się pobrać zaproszeń dla serwera ${guild.name}:`, err);
-    }
+    } catch (err) {}
   }
 
   try {
@@ -126,16 +122,14 @@ client.on('ready', async () => {
   } catch (err) {}
 });
 
-// --- ŚLEDZENIE ZAPROSZEŃ (WEJŚCIA I WYJŚCIA) ---
+// --- ŚLEDZENIE ZAPROSZEŃ ---
 client.on('guildMemberAdd', async member => {
-  // Nadawanie auto-roli
   if (autoRoles.length > 0) {
     for (const roleId of autoRoles) {
       await member.roles.add(roleId).catch(() => {});
     }
   }
 
-  // Obsługa zaproszeń
   try {
     const guildInvites = await member.guild.invites.fetch();
     const cachedInvites = invitesCache.get(member.guild.id);
@@ -151,7 +145,6 @@ client.on('guildMemberAdd', async member => {
       }
     }
 
-    // Aktualizujemy cache zaproszeń
     invitesCache.set(member.guild.id, new Map(guildInvites.map(inv => [inv.code, inv.uses])));
 
     if (usedInvite && usedInvite.inviter) {
@@ -163,16 +156,10 @@ client.on('guildMemberAdd', async member => {
       userInvites.set(inviterId, stats);
       saveInvites();
     }
-  } catch (err) {
-    console.error('Błąd podczas śledzenia zaproszenia:', err);
-  }
+  } catch (err) {}
 });
 
-client.on('guildMemberRemove', async member => {
-  // Możemy sprawdzić kto zaprosił osobę, która wyszła (Discord nie podaje bezpośrednio, 
-  // ale możemy pomniejszyć current u osób, które miały aktywne zaproszenie, bądź śledzić przez joiny)
-  // Uproszczona wersja: szukamy w statystykach lub odejmujemy globalnie (tutaj upraszczamy oznaczając spadek)
-});
+client.on('guildMemberRemove', async member => {});
 
 // --- OBSŁUGA KANAŁÓW GŁOSOWYCH ---
 client.on('voiceStateUpdate', async (oldState, newState) => {
@@ -223,21 +210,17 @@ client.on('messageCreate', async message => {
     return;
   }
 
-  // --- NOWA KOMENDA: !invite <id_gracza / wzmianka> ---
+  // --- KOMENDA: !invite ---
   if (message.content.startsWith('!invite')) {
     const args = message.content.split(' ').slice(1);
     let targetUser = message.mentions.users.first();
 
     if (!targetUser && args[0]) {
       const cleanId = args[0].replace(/[<@!>]/g, '');
-      try {
-        targetUser = await client.users.fetch(cleanId).catch(() => null);
-      } catch (e) {}
+      try { targetUser = await client.users.fetch(cleanId).catch(() => null); } catch (e) {}
     }
 
-    if (!targetUser) {
-      targetUser = message.author;
-    }
+    if (!targetUser) targetUser = message.author;
 
     const stats = userInvites.get(targetUser.id) || { total: 0, left: 0, current: 0 };
 
@@ -331,7 +314,7 @@ client.on('messageCreate', async message => {
       }
       autoRoles = autoRoles.filter(id => id !== targetValue);
       fs.writeFileSync(CONFIG_FILE, JSON.stringify({ roles: autoRoles }, null, 2));
-      return message.reply('✅ Usunięto rola z auto-rol.');
+      return message.reply('✅ Usunięto rolę z auto-rol.');
     }
   }
 
@@ -348,7 +331,6 @@ client.on('messageCreate', async message => {
 
     const user = target.user;
     const joinedTimestamp = Math.floor(target.joinedTimestamp / 1000);
-    const createdTimestamp = Math.floor(user.createdTimestamp / 1000);
     const roles = target.roles.cache.filter(r => r.id !== message.guild.id).sort((a, b) => b.position - a.position).map(r => r).join(', ') || 'Brak';
 
     const embed = new EmbedBuilder()
@@ -365,6 +347,69 @@ client.on('messageCreate', async message => {
 
     await message.channel.send({ embeds: [embed] });
     await message.delete().catch(() => {});
+    return;
+  }
+
+  // --- KOMENDA KONKURSU (WIELE RÓWNOCZEŚNIE): !konkurs [minuty] [nagroda] ---
+  if (message.content.startsWith('!konkurs') && message.channel.id === GIVEAWAY_CHANNEL_ID) {
+    const args = message.content.slice(8).trim().split(' ');
+    const minutes = parseInt(args[0]);
+    const prize = args.slice(1).join(' ');
+
+    if (isNaN(minutes) || !prize) {
+      const errReply = await message.reply('❌ Błędny format! Użyj: `!konkurs [minuty] [nagroda]` (np. `!konkurs 5 Klucz do gry`)');
+      setTimeout(() => errReply.delete().catch(() => {}), 5000);
+      await message.delete().catch(() => {});
+      return;
+    }
+
+    await message.delete().catch(() => {});
+
+    const endTime = Math.floor(Date.now() / 1000) + (minutes * 60);
+
+    const embed = new EmbedBuilder()
+      .setTitle('🎉 KONKURS 🎉')
+      .setDescription(`Nagroda: **${prize}**\n\nKliknij przycisk poniżej, aby wziąć udział!\nKoniec za: <t:${endTime}:R>`)
+      .setColor('Green')
+      .setFooter({ text: `Konkurs stworzył: ${message.author.tag}` });
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('join_giveaway')
+        .setLabel('Weź udział')
+        .setStyle(ButtonStyle.Success)
+        .setEmoji('🎉')
+    );
+
+    const giveawayMsg = await message.channel.send({ embeds: [embed], components: [row] });
+    
+    // Tworzymy unikalny zestaw uczestników przypisany do ID tej konkretnej wiadomości konkursu
+    giveawayParticipants.set(giveawayMsg.id, new Set());
+
+    setTimeout(async () => {
+      const participantsSet = giveawayParticipants.get(giveawayMsg.id);
+      const participants = Array.from(participantsSet || []);
+
+      const endedEmbed = new EmbedBuilder()
+        .setTitle('🎉 KONKURS ROZSTRZYGNIĘTY 🎉')
+        .setDescription(`Nagroda: **${prize}**\n\nLiczba uczestników: **${participants.length}**`)
+        .setColor('Green');
+
+      if (participants.length === 0) {
+        endedEmbed.addFields({ name: 'Zwycięzca', value: 'Nikt nie wziął udziału w konkursie.' });
+        await giveawayMsg.edit({ embeds: [endedEmbed], components: [] }).catch(() => {});
+        await message.channel.send('❌ Konkurs zakończony, brak uczestników.');
+      } else {
+        const winnerId = participants[Math.floor(Math.random() * participants.length)];
+        endedEmbed.addFields({ name: 'Zwycięzca', value: `<@${winnerId}>! Gratulacje! 🏆` });
+        await giveawayMsg.edit({ embeds: [endedEmbed], components: [] }).catch(() => {});
+        await message.channel.send(`🎉 Gratulacje <@${winnerId}>! Wygrałeś/aś: **${prize}**!`);
+      }
+
+      // Usuwamy dane tego konkursu z pamięci po zakończeniu
+      giveawayParticipants.delete(giveawayMsg.id);
+    }, minutes * 60 * 1000);
+
     return;
   }
 
@@ -402,9 +447,25 @@ client.on('messageCreate', async message => {
   }
 });
 
-// Obsługa przycisków
+// Obsługa interakcji przycisków
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton()) return;
+
+  if (interaction.customId === 'join_giveaway') {
+    const participants = giveawayParticipants.get(interaction.message.id);
+    if (!participants) {
+      return interaction.reply({ content: '❌ Ten konkurs już się zakończył.', ephemeral: true });
+    }
+
+    if (participants.has(interaction.user.id)) {
+      participants.delete(interaction.user.id);
+      return interaction.reply({ content: '⚠️ Wypisałeś się z konkursu.', ephemeral: true });
+    } else {
+      participants.add(interaction.user.id);
+      return interaction.reply({ content: '✅ Zostałeś zapisany do konkursu! Powodzenia!', ephemeral: true });
+    }
+  }
+
   if (interaction.customId === 'start_captcha') {
     const num1 = Math.floor(Math.random() * 10) + 1;
     const num2 = Math.floor(Math.random() * 10) + 1;
