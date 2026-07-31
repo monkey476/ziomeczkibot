@@ -30,6 +30,8 @@ const ROLE_REMOVE_ID = '1532514463972855858';
 const ROLE_ADD_ID = '1532411605592047636';
 
 const COUNTING_CHANNEL_ID = '1532453185413972038';
+const GIVEAWAY_CHANNEL_ID = '1532418596159095105';
+
 let currentCount = 0;
 let lastUserId = null;
 
@@ -37,6 +39,8 @@ let lastUserId = null;
 const PROTECTED_USER_ID = '1463274528930009332';
 
 const activeCaptchas = new Map();
+// Przechowywanie uczestników konkursów: Map<messageId, Set<userId>>
+const giveawayParticipants = new Map();
 
 client.on('ready', () => {
   console.log(`Zalogowano jako ${client.user.tag}! Bot gotowy do pracy.`);
@@ -51,14 +55,74 @@ client.on('messageCreate', async message => {
     
     try {
       const member = await message.guild.members.fetch(message.author.id);
-      // Timeout na 10 minut (10 * 60 * 1000 milisekund)
       await member.timeout(10 * 60 * 1000, 'Próba oznaczania chronionego użytkownika');
       
       const warning = await message.channel.send(`⚠️ <@${message.author.id}>, nie wolno oznaczać tej osoby! Otrzymujesz timeout na 10 minut.`);
       setTimeout(() => warning.delete().catch(() => {}), 7000);
     } catch (err) {
-      console.error('Nie udało się nałożyć timeoutu (upewnij się, że bot ma wyższą rolę niż użytkownik i uprawnienie do moderowania):', err);
+      console.error('Nie udało się nałożyć timeoutu:', err);
     }
+    return;
+  }
+
+  // --- KOMENDA KONKURSU: !konkurs [minuty] [nagroda] ---
+  if (message.content.startsWith('!konkurs') && message.channel.id === GIVEAWAY_CHANNEL_ID) {
+    const args = message.content.slice(8).trim().split(' ');
+    const minutes = parseInt(args[0]);
+    const prize = args.slice(1).join(' ');
+
+    if (isNaN(minutes) || !prize) {
+      const errReply = await message.reply('❌ Błędny format! Użyj: `!konkurs [minuty] [nagroda]` (np. `!konkurs 5 Klucz do gry`)');
+      setTimeout(() => errReply.delete().catch(() => {}), 5000);
+      await message.delete().catch(() => {});
+      return;
+    }
+
+    await message.delete().catch(() => {});
+
+    const endTime = Math.floor(Date.now() / 1000) + (minutes * 60);
+
+    const embed = new EmbedBuilder()
+      .setTitle('🎉 KONKURS 🎉')
+      .setDescription(`Nagroda: **${prize}**\n\nKliknij przycisk poniżej, aby wziąć udział!\nKoniec za: <t:${endTime}:R>`)
+      .setColor('Gold')
+      .setFooter({ text: `Konkurs stworzył: ${message.author.tag}` });
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('join_giveaway')
+        .setLabel('Weź udział')
+        .setStyle(ButtonStyle.Success)
+        .setEmoji('🎉')
+    );
+
+    const giveawayMsg = await message.channel.send({ embeds: [embed], components: [row] });
+    giveawayParticipants.set(giveawayMsg.id, new Set());
+
+    // Odliczanie czasu do zakończenia konkursu
+    setTimeout(async () => {
+      const participantsSet = giveawayParticipants.get(giveawayMsg.id);
+      const participants = Array.from(participantsSet || []);
+
+      const endedEmbed = new EmbedBuilder()
+        .setTitle('🎉 KONKURS ROZSTRZYGNIĘTY 🎉')
+        .setDescription(`Nagroda: **${prize}**\n\nLiczba uczestników: **${participants.length}**`)
+        .setColor('Grey');
+
+      if (participants.length === 0) {
+        endedEmbed.addFields({ name: 'Zwycięzca', value: 'Nikt nie wziął udziału w konkursie.' });
+        await giveawayMsg.edit({ embeds: [endedEmbed], components: [] });
+        await message.channel.send('❌ Konkurs zakończony, brak uczestników.');
+      } else {
+        const winnerId = participants[Math.floor(Math.random() * participants.length)];
+        endedEmbed.addFields({ name: 'Zwycięzca', value: `<@${winnerId}>! Gratulacje! 🏆` });
+        await giveawayMsg.edit({ embeds: [endedEmbed], components: [] });
+        await message.channel.send(`🎉 Gratulacje <@${winnerId}>! Wygrałeś/aś: **${prize}**!`);
+      }
+
+      giveawayParticipants.delete(giveawayMsg.id);
+    }, minutes * 60 * 1000);
+
     return;
   }
 
@@ -107,10 +171,27 @@ client.on('messageCreate', async message => {
   }
 });
 
-// Obsługa przycisku weryfikacji
+// Obsługa interakcji (Przyciski: Weryfikacja + Konkursy)
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton()) return;
 
+  // Dołączanie do konkursu
+  if (interaction.customId === 'join_giveaway') {
+    const participants = giveawayParticipants.get(interaction.message.id);
+    if (!participants) {
+      return interaction.reply({ content: '❌ Ten konkurs już się zakończył.', ephemeral: true });
+    }
+
+    if (participants.has(interaction.user.id)) {
+      participants.delete(interaction.user.id);
+      return interaction.reply({ content: '⚠️ Wypisałeś się z konkursu.', ephemeral: true });
+    } else {
+      participants.add(interaction.user.id);
+      return interaction.reply({ content: '✅ Zostałeś zapisany do konkursu! Powodzenia!', ephemeral: true });
+    }
+  }
+
+  // Obsługa przycisku weryfikacji
   if (interaction.customId === 'start_captcha') {
     const num1 = Math.floor(Math.random() * 10) + 1;
     const num2 = Math.floor(Math.random() * 10) + 1;
