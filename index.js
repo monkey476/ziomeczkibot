@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, ChannelType, PermissionsBitField } = require('discord.js');
 const express = require('express');
 
 // Serwer HTTP dla Render.com + auto-ping
@@ -20,7 +20,8 @@ const client = new Client({
     GatewayIntentBits.Guilds, 
     GatewayIntentBits.GuildMessages, 
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildVoiceStates // Wymagane do wykrywania ruchu na kanałach głosowych!
   ] 
 });
 
@@ -32,18 +33,67 @@ const ROLE_ADD_ID = '1532411605592047636';
 const COUNTING_CHANNEL_ID = '1532453185413972038';
 const GIVEAWAY_CHANNEL_ID = '1532418596159095105';
 
+// --- KONFIGURACJA WŁASNYCH KANAŁÓW GŁOSOWYCH ---
+const CREATE_VOICE_CHANNEL_ID = '1532548526825803878'; 
+const VOICE_CATEGORY_ID = '1532550008833048796';
+
 let currentCount = 0;
 let lastUserId = null;
 
-// ID użytkownika, którego nie można pingować
 const PROTECTED_USER_ID = '1463274528930009332';
 
 const activeCaptchas = new Map();
-// Przechowywanie uczestników konkursów: Map<messageId, Set<userId>>
 const giveawayParticipants = new Map();
+// Śledzenie stworzonych kanałów głosowych: Set<channelId>
+const tempVoiceChannels = new Set();
 
 client.on('ready', () => {
   console.log(`Zalogowano jako ${client.user.tag}! Bot gotowy do pracy.`);
+});
+
+// --- OBSŁUGA KANAŁÓW GŁOSOWYCH (WŁASNY KANAŁ) ---
+client.on('voiceStateUpdate', async (oldState, newState) => {
+  const member = newState.member;
+  if (!member || member.user.bot) return;
+
+  // Użytkownik wszedł na kanał tworzący
+  if (newState.channelId === CREATE_VOICE_CHANNEL_ID) {
+    try {
+      const guild = newState.guild;
+      const channelName = `🎙️ Kanał - ${member.user.username}`;
+
+      // Tworzenie prywatnego kanału głosowego
+      const channel = await guild.channels.create({
+        name: channelName,
+        type: ChannelType.GuildVoice,
+        parent: VOICE_CATEGORY_ID,
+        permissionOverwrites: [
+          {
+            id: guild.id,
+            allow: [PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak],
+          },
+          {
+            id: member.id,
+            allow: [PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.MoveMembers], // Właściciel może zarządzać kanałem
+          }
+        ]
+      });
+
+      tempVoiceChannels.add(channel.id);
+      await member.voice.setChannel(channel).catch(() => {});
+    } catch (err) {
+      console.error('Błąd podczas tworzenia kanału głosowego:', err);
+    }
+  }
+
+  // Użytkownik opuścił kanał (sprawdzamy czy to był pusty kanał tymczasowy)
+  if (oldState.channelId && tempVoiceChannels.has(oldState.channelId)) {
+    const oldChannel = oldState.channel;
+    if (oldChannel && oldChannel.members.size === 0) {
+      tempVoiceChannels.delete(oldChannel.id);
+      await oldChannel.delete().catch(() => {});
+    }
+  }
 });
 
 client.on('messageCreate', async message => {
@@ -85,7 +135,7 @@ client.on('messageCreate', async message => {
     const embed = new EmbedBuilder()
       .setTitle('🎉 KONKURS 🎉')
       .setDescription(`Nagroda: **${prize}**\n\nKliknij przycisk poniżej, aby wziąć udział!\nKoniec za: <t:${endTime}:R>`)
-      .setColor('Gold')
+      .setColor('Green')
       .setFooter({ text: `Konkurs stworzył: ${message.author.tag}` });
 
     const row = new ActionRowBuilder().addComponents(
@@ -99,7 +149,6 @@ client.on('messageCreate', async message => {
     const giveawayMsg = await message.channel.send({ embeds: [embed], components: [row] });
     giveawayParticipants.set(giveawayMsg.id, new Set());
 
-    // Odliczanie czasu do zakończenia konkursu
     setTimeout(async () => {
       const participantsSet = giveawayParticipants.get(giveawayMsg.id);
       const participants = Array.from(participantsSet || []);
@@ -107,7 +156,7 @@ client.on('messageCreate', async message => {
       const endedEmbed = new EmbedBuilder()
         .setTitle('🎉 KONKURS ROZSTRZYGNIĘTY 🎉')
         .setDescription(`Nagroda: **${prize}**\n\nLiczba uczestników: **${participants.length}**`)
-        .setColor('Grey');
+        .setColor('Green');
 
       if (participants.length === 0) {
         endedEmbed.addFields({ name: 'Zwycięzca', value: 'Nikt nie wziął udziału w konkursie.' });
@@ -131,7 +180,7 @@ client.on('messageCreate', async message => {
     const embed = new EmbedBuilder()
       .setTitle('Weryfikacja Bezpieczeństwa')
       .setDescription('Kliknij poniższy przycisk, aby rozpocząć weryfikację.')
-      .setColor('Blue');
+      .setColor('Green');
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -175,7 +224,6 @@ client.on('messageCreate', async message => {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton()) return;
 
-  // Dołączanie do konkursu
   if (interaction.customId === 'join_giveaway') {
     const participants = giveawayParticipants.get(interaction.message.id);
     if (!participants) {
@@ -191,7 +239,6 @@ client.on('interactionCreate', async interaction => {
     }
   }
 
-  // Obsługa przycisku weryfikacji
   if (interaction.customId === 'start_captcha') {
     const num1 = Math.floor(Math.random() * 10) + 1;
     const num2 = Math.floor(Math.random() * 10) + 1;
@@ -202,7 +249,7 @@ client.on('interactionCreate', async interaction => {
     const embed = new EmbedBuilder()
       .setTitle('Weryfikacja CAPTCHA')
       .setDescription(`Napisz na tym kanale (w wiadomości) wynik działania: **${num1} + ${num2} = ?**\nMasz na to 2 minuty.`)
-      .setColor('Yellow');
+      .setColor('Green');
 
     await interaction.reply({ embeds: [embed], ephemeral: true });
 
