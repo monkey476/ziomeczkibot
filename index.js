@@ -43,14 +43,14 @@ let lastUserId = null;
 
 const PROTECTED_USER_ID = '1463274528930009332';
 
-// Plik do zapisu auto-roli, żeby nie znikała po restarcie bota
+// Plik do zapisu auto-rol (wspiera teraz wiele ról)
 const CONFIG_FILE = path.join(__dirname, 'autorole.json');
-let autoRoleId = null;
+let autoRoles = [];
 
 if (fs.existsSync(CONFIG_FILE)) {
   try {
     const data = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-    autoRoleId = data.roleId || null;
+    autoRoles = data.roles || (data.roleId ? [data.roleId] : []);
   } catch (e) {}
 }
 
@@ -80,14 +80,16 @@ client.on('ready', async () => {
   }
 });
 
-// --- AUTOMATYCZNE NADAWANIE ROLI PO WEJŚCIU NA SERWER ---
+// --- AUTOMATYCZNE NADAWANIE RÓL PO WEJŚCIU NA SERWER ---
 client.on('guildMemberAdd', async member => {
-  if (!autoRoleId) return;
-  try {
-    await member.roles.add(autoRoleId);
-    console.log(`[AUTOROLE] Nadano rolę o ID ${autoRoleId dla użytkownika ${member.user.tag}`);
-  } catch (err) {
-    console.error('Nie udało się nadać auto-roli nowemu użytkownikowi:', err);
+  if (autoRoles.length === 0) return;
+  for (const roleId of autoRoles) {
+    try {
+      await member.roles.add(roleId);
+      console.log(`[AUTOROLE] Nadano rolę ID ${roleId} dla użytkownika ${member.user.tag}`);
+    } catch (err) {
+      console.error(`Nie udało się nadać auto-roli ${roleId}:`, err);
+    }
   }
 });
 
@@ -152,7 +154,7 @@ client.on('messageCreate', async message => {
     return;
   }
 
-  // --- KOMENDA: !autorole add <id> / remove ---
+  // --- KOMENDA: !autorole add <id> / remove <id|all> ---
   if (message.content.startsWith('!autorole')) {
     if (!message.member.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
       const errReply = await message.reply('❌ Nie masz uprawnień do zarządzania rolami!');
@@ -163,17 +165,17 @@ client.on('messageCreate', async message => {
 
     const args = message.content.split(' ').slice(1);
     const action = args[0];
-    const roleId = args[1]?.replace(/[<@&>]/g, '');
+    const targetValue = args[1]?.replace(/[<@&>]/g, '');
 
     if (action === 'add') {
-      if (!roleId) {
+      if (!targetValue) {
         const errReply = await message.reply('❌ Podaj ID roli! Użyj: `!autorole add <id_roli>`');
         setTimeout(() => errReply.delete().catch(() => {}), 5000);
         await message.delete().catch(() => {});
         return;
       }
 
-      const role = message.guild.roles.cache.get(roleId);
+      const role = message.guild.roles.cache.get(targetValue);
       if (!role) {
         const errReply = await message.reply('❌ Nie znaleziono takiej roli na tym serwerze!');
         setTimeout(() => errReply.delete().catch(() => {}), 5000);
@@ -181,27 +183,63 @@ client.on('messageCreate', async message => {
         return;
       }
 
-      autoRoleId = roleId;
-      fs.writeFileSync(CONFIG_FILE, JSON.stringify({ roleId: autoRoleId }, null, 2));
+      if (autoRoles.includes(targetValue)) {
+        const errReply = await message.reply('⚠️ Ta rola jest już dodana do auto-rol!');
+        setTimeout(() => errReply.delete().catch(() => {}), 5000);
+        await message.delete().catch(() => {});
+        return;
+      }
 
-      const successReply = await message.reply(`✅ Pomyślnie ustawiono auto-rolę na: **${role.name}** (\`${roleId}\`) dla nowych użytkowników.`);
+      autoRoles.push(targetValue);
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify({ roles: autoRoles }, null, 2));
+
+      const successReply = await message.reply(`✅ Pomyślnie dodano auto-rolę: **${role.name}** (\`${targetValue}\`).`);
       setTimeout(() => successReply.delete().catch(() => {}), 7000);
       await message.delete().catch(() => {});
       return;
     } 
     
-    if (action === 'remove' || action === 'off') {
-      autoRoleId = null;
-      if (fs.existsSync(CONFIG_FILE)) fs.unlinkSync(CONFIG_FILE);
+    if (action === 'remove') {
+      if (!targetValue) {
+        const errReply = await message.reply('❌ Podaj ID roli do usunięcia lub wpisz `all`! Użyj: `!autorole remove <id/all>`');
+        setTimeout(() => errReply.delete().catch(() => {}), 5000);
+        await message.delete().catch(() => {});
+        return;
+      }
 
-      const successReply = await message.reply('✅ Wyłączono system auto-roli.');
+      if (targetValue.toLowerCase() === 'all') {
+        autoRoles = [];
+        if (fs.existsSync(CONFIG_FILE)) fs.unlinkSync(CONFIG_FILE);
+
+        const successReply = await message.reply('✅ Wyczyszczono i wyłączono wszystkie auto-role.');
+        setTimeout(() => successReply.delete().catch(() => {}), 5000);
+        await message.delete().catch(() => {});
+        return;
+      }
+
+      if (!autoRoles.includes(targetValue)) {
+        const errReply = await message.reply('❌ Tej roli nie ma na liście auto-rol.');
+        setTimeout(() => errReply.delete().catch(() => {}), 5000);
+        await message.delete().catch(() => {});
+        return;
+      }
+
+      autoRoles = autoRoles.filter(id => id !== targetValue);
+      if (autoRoles.length > 0) {
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify({ roles: autoRoles }, null, 2));
+      } else {
+        if (fs.existsSync(CONFIG_FILE)) fs.unlinkSync(CONFIG_FILE);
+      }
+
+      const successReply = await message.reply(`✅ Pomyślnie usunięto rolę o ID \`${targetValue}\` z auto-rol.`);
       setTimeout(() => successReply.delete().catch(() => {}), 5000);
       await message.delete().catch(() => {});
       return;
     }
 
-    const infoReply = await message.reply(`ℹ️ Aktualna auto-rola: ${autoRoleId ? `<@&${autoRoleId}>` : 'Brak'}\nUżycie: \`!autorole add <id>\` lub \`!autorole remove\``);
-    setTimeout(() => infoReply.delete().catch(() => {}), 7000);
+    const rolesList = autoRoles.length > 0 ? autoRoles.map(id => `<@&${id}>`).join(', ') : 'Brak';
+    const infoReply = await message.reply(`ℹ️ Aktywne auto-role: ${rolesList}\nUżycie:\n• \`!autorole add <id>\`\n• \`!autorole remove <id>\`\n• \`!autorole remove all\``);
+    setTimeout(() => infoReply.delete().catch(() => {}), 9000);
     await message.delete().catch(() => {});
     return;
   }
