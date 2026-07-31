@@ -34,7 +34,7 @@ const ROLE_ADD_ID = '1532411605592047636';
 
 const COUNTING_CHANNEL_ID = '1532453185413972038';
 const GIVEAWAY_CHANNEL_ID = '1532418596159095105';
-const LAST_LETTER_CHANNEL_ID = '1532694623993200730'; // Nowy kanał do gry w ostatnią literę
+const LAST_LETTER_CHANNEL_ID = '1532694623993200730'; // Kanał do gry w ostatnią literę
 
 const CREATE_VOICE_CHANNEL_ID = '1532548526825803878'; 
 const VOICE_CATEGORY_ID = '1532550008833048796';
@@ -91,7 +91,6 @@ client.on('ready', async () => {
       const messages = await letterChannel.messages.fetch({ limit: 5 });
       for (const msg of messages.values()) {
         const content = msg.content.trim();
-        // Sprawdź czy wiadomość nie ma cyfr i składa się z jednego słowa/wyrazu
         if (content && !/\d/.test(content)) {
           lastWord = content.toLowerCase();
           lastLetterUserId = msg.author.id;
@@ -280,7 +279,7 @@ client.on('messageCreate', async message => {
         target = await message.guild.members.fetch(cleanId).catch(() => null);
       } catch (e) {}
 
-      if (!target} {
+      if (!target) {
         try {
           const fetchedMembers = await message.guild.members.fetch({ query: args.join(' '), limit: 1 });
           target = fetchedMembers.first();
@@ -427,7 +426,6 @@ client.on('messageCreate', async message => {
   if (message.channel.id === LAST_LETTER_CHANNEL_ID) {
     const content = message.content.trim().toLowerCase();
 
-    // 1. Sprawdź czy wiadomość zawiera jakiekolwiek cyfry lub spacje (ma być jedno słowo)
     if (/\d/.test(content) || content.includes(' ')) {
       await message.delete().catch(() => {});
       const warn = await message.channel.send(`❌ <@${message.author.id}>, w tym kanale można pisać **tylko pojedyncze słowa** (bez cyfr i spacji)!`);
@@ -435,7 +433,6 @@ client.on('messageCreate', async message => {
       return;
     }
 
-    // 2. Blokada pisania dwa razy pod rząd przez tę samą osobę (opcjonalne, ale zapobiega spamowi - jeśli nie chcesz, usuń ten blok)
     if (message.author.id === lastLetterUserId) {
       await message.delete().catch(() => {});
       const warn = await message.channel.send(`❌ <@${message.author.id}>, musisz poczekać, aż ktoś inny napisze słowo!`);
@@ -443,7 +440,6 @@ client.on('messageCreate', async message => {
       return;
     }
 
-    // 3. Sprawdź poprawność litery, jeśli to kolejne słowo w grze
     if (lastWord) {
       const requiredLetter = lastWord.slice(-1);
       const firstLetter = content.charAt(0);
@@ -456,7 +452,6 @@ client.on('messageCreate', async message => {
       }
     }
 
-    // Jeśli wszystko OK
     lastWord = content;
     lastLetterUserId = message.author.id;
     await message.react('✅').catch(() => {});
@@ -464,7 +459,7 @@ client.on('messageCreate', async message => {
   }
 });
 
-// Obsługa interakcji (Przyciski: Weryfikacja + Konkursy)
+// Obsługa interakcji
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton()) return;
 
@@ -492,7 +487,7 @@ client.on('interactionCreate', async interaction => {
 
     const embed = new EmbedBuilder()
       .setTitle('Weryfikacja CAPTCHA')
-      .setDescription(`Napisz na tym kanale (w wiadomości) wynik działania: **${num1} + ${num2} = ?**\nMasz na to 2 minuty.`)
+      .setDescription(`Napisz na tym kanale wynik działania: **${num1} + ${num2} = ?**\nMasz na to 2 minuty.`)
       .setColor('Green');
 
     await interaction.reply({ embeds: [embed], ephemeral: true });
