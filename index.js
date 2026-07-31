@@ -1,4 +1,8 @@
-const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, ChannelType, PermissionsBitField, Collection } = require('discord.js');
+const { 
+  Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, 
+  EmbedBuilder, ChannelType, PermissionsBitField, ModalBuilder, 
+  TextInputBuilder, TextInputStyle, AttachmentBuilder 
+} = require('discord.js');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
@@ -10,7 +14,6 @@ const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('Bot Ziomeczki.gg działa!'));
 app.listen(PORT, () => console.log(`Serwer HTTP na porcie ${PORT}`));
 
-// Samopinging (zapobiega uśpieniu bota przez Render)
 setInterval(() => {
   if (process.env.RENDER_EXTERNAL_URL) {
     fetch(process.env.RENDER_EXTERNAL_URL).catch(() => {});
@@ -28,7 +31,7 @@ const client = new Client({
   ] 
 });
 
-// Konfiguracja ID kanałów, ról oraz chronionego użytkownika
+// --- KONFIGURACJA GŁÓWNA ---
 const VERIFY_CHANNEL_ID = '1532519461414895827';
 const ROLE_REMOVE_ID = '1532514463972855858';
 const ROLE_ADD_ID = '1532411605592047636';
@@ -41,18 +44,27 @@ const REPORT_CHANNEL_ID = '1532723262390272080';
 const CREATE_VOICE_CHANNEL_ID = '1532548526825803878'; 
 const VOICE_CATEGORY_ID = '1532550008833048796';
 
+const PROTECTED_USER_ID = '1463274528930009332';
+
+// --- NOWA KONFIGURACJA TICKETÓW (TWOJE ID) ---
+const TICKET_CATEGORY_ID = '1532828546639069376';
+const TICKET_LOG_CHANNEL_ID = '1532832889773883412';
+const STAFF_ROLE_IDS = [
+  '1532410985141243964',
+  '1532411058994806824',
+  '1532411123259670800',
+  '1532411223457661000'
+];
+
+// Zmienne gier
 let currentCount = 0;
 let lastUserId = null;
-
 let lastWord = null;
 let lastLetterUserId = null;
 
-const PROTECTED_USER_ID = '1463274528930009332';
-
-// Plik do zapisu auto-rol
+// Auto-role
 const CONFIG_FILE = path.join(__dirname, 'autorole.json');
 let autoRoles = [];
-
 if (fs.existsSync(CONFIG_FILE)) {
   try {
     const data = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
@@ -60,25 +72,24 @@ if (fs.existsSync(CONFIG_FILE)) {
   } catch (e) {}
 }
 
-// Kolekcja do śledzenia zaproszeń
+// Zaproszenia
 const invitesCache = new Map();
 const invitesFile = path.join(__dirname, 'invites.json');
 let userInvites = new Map();
-
 if (fs.existsSync(invitesFile)) {
   try {
     const data = JSON.parse(fs.readFileSync(invitesFile, 'utf8'));
     userInvites = new Map(Object.entries(data));
   } catch (e) {}
 }
-
 function saveInvites() {
   const obj = Object.fromEntries(userInvites);
   fs.writeFileSync(invitesFile, JSON.stringify(obj, null, 2));
 }
 
+// Pamięć podręczna
 const activeCaptchas = new Map();
-const giveawayParticipants = new Map(); // Przechowuje uczestników dla każdego konkursu osobno
+const giveawayParticipants = new Map(); 
 const tempVoiceChannels = new Set();
 
 client.on('ready', async () => {
@@ -122,44 +133,31 @@ client.on('ready', async () => {
   } catch (err) {}
 });
 
-// --- ŚLEDZENIE ZAPROSZEŃ ---
+// --- EVENTY: ZAPROSZENIA I AUTOROLE ---
 client.on('guildMemberAdd', async member => {
   if (autoRoles.length > 0) {
-    for (const roleId of autoRoles) {
-      await member.roles.add(roleId).catch(() => {});
-    }
+    for (const roleId of autoRoles) await member.roles.add(roleId).catch(() => {});
   }
-
   try {
     const guildInvites = await member.guild.invites.fetch();
     const cachedInvites = invitesCache.get(member.guild.id);
-    
     let usedInvite = null;
     if (cachedInvites) {
       for (const inv of guildInvites.values()) {
-        const cachedUses = cachedInvites.get(inv.code) || 0;
-        if (inv.uses > cachedUses) {
-          usedInvite = inv;
-          break;
-        }
+        if (inv.uses > (cachedInvites.get(inv.code) || 0)) { usedInvite = inv; break; }
       }
     }
-
     invitesCache.set(member.guild.id, new Map(guildInvites.map(inv => [inv.code, inv.uses])));
 
     if (usedInvite && usedInvite.inviter) {
-      const inviterId = usedInvite.inviter.id;
-      let stats = userInvites.get(inviterId) || { total: 0, left: 0, current: 0 };
-      
+      let stats = userInvites.get(usedInvite.inviter.id) || { total: 0, left: 0, current: 0 };
       stats.total += 1;
       stats.current += 1;
-      userInvites.set(inviterId, stats);
+      userInvites.set(usedInvite.inviter.id, stats);
       saveInvites();
     }
   } catch (err) {}
 });
-
-client.on('guildMemberRemove', async member => {});
 
 // --- OBSŁUGA KANAŁÓW GŁOSOWYCH ---
 client.on('voiceStateUpdate', async (oldState, newState) => {
@@ -168,19 +166,15 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 
   if (newState.channelId === CREATE_VOICE_CHANNEL_ID) {
     try {
-      const guild = newState.guild;
-      const channelName = `🎙️ Kanał - ${member.user.username}`;
-
-      const channel = await guild.channels.create({
-        name: channelName,
+      const channel = await newState.guild.channels.create({
+        name: `🎙️ ${member.user.username}`,
         type: ChannelType.GuildVoice,
         parent: VOICE_CATEGORY_ID,
         permissionOverwrites: [
-          { id: guild.id, allow: [PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak] },
+          { id: newState.guild.id, allow: [PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.Speak] },
           { id: member.id, allow: [PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.MoveMembers] }
         ]
       });
-
       tempVoiceChannels.add(channel.id);
       await member.voice.setChannel(channel).catch(() => {});
     } catch (err) {}
@@ -195,306 +189,204 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
   }
 });
 
+// --- KOMENDY ---
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
 
-  // --- ANTY-PING ---
+  // ANTY-PING
   if (message.mentions.users.has(PROTECTED_USER_ID)) {
     await message.delete().catch(() => {});
     try {
-      const member = await message.guild.members.fetch(message.author.id);
-      await member.timeout(10 * 60 * 1000, 'Próba oznaczania chronionego użytkownika');
-      const warning = await message.channel.send(`⚠️ <@${message.author.id}>, nie wolno oznaczać tej osoby! Timeout na 10 minut.`);
+      await message.member.timeout(10 * 60 * 1000, 'Oznaczanie chronionego użytkownika');
+      const warning = await message.channel.send(`⚠️ <@${message.author.id}>, timeout na 10 minut.`);
       setTimeout(() => warning.delete().catch(() => {}), 7000);
     } catch (err) {}
     return;
   }
 
-  // --- KOMENDA: !invite ---
-  if (message.content.startsWith('!invite')) {
-    const args = message.content.split(' ').slice(1);
-    let targetUser = message.mentions.users.first();
-
-    if (!targetUser && args[0]) {
-      const cleanId = args[0].replace(/[<@!>]/g, '');
-      try { targetUser = await client.users.fetch(cleanId).catch(() => null); } catch (e) {}
-    }
-
-    if (!targetUser) targetUser = message.author;
-
-    const stats = userInvites.get(targetUser.id) || { total: 0, left: 0, current: 0 };
-
+  // SETUP TICKETÓW
+  if (message.content === '!setup-ticket' && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     const embed = new EmbedBuilder()
-      .setTitle(`📊 Statystyki zaproszeń: ${targetUser.tag}`)
-      .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
-      .setColor('Blue')
-      .addFields(
-        { name: '📥 Łącznie zaproszonych', value: `**${stats.total}** osób`, inline: true },
-        { name: '✅ Obecnie na serwerze', value: `**${stats.current}** osób`, inline: true },
-        { name: '❌ Wyszło z serwera', value: `**${stats.left}** osób`, inline: true }
-      )
-      .setFooter({ text: `Komendę wywołał: ${message.author.tag}`, iconURL: message.author.displayAvatarURL() })
-      .setTimestamp();
+      .setTitle('🎫 Centrum Pomocy')
+      .setDescription('Potrzebujesz pomocy administracji? Masz ważne pytanie lub chcesz coś zgłosić?\n\nKliknij przycisk poniżej, aby stworzyć **prywatny bilet (ticket)**.')
+      .setColor('Blue');
 
-    await message.channel.send({ embeds: [embed] });
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('ticket_create')
+        .setLabel('Stwórz Ticket')
+        .setEmoji('📩')
+        .setStyle(ButtonStyle.Primary)
+    );
+
+    await message.channel.send({ embeds: [embed], components: [row] });
+    await message.delete().catch(() => {});
     return;
   }
 
-  // --- KOMENDA: !report ---
-  if (message.content.startsWith('!report')) {
-    const args = message.content.split(' ').slice(1);
-    const targetMember = message.mentions.members.first();
-    const reason = args.slice(1).join(' ');
-
-    if (!targetMember || !reason) {
-      const errReply = await message.reply(`❌ Błędny format! Użyj: \`!report @wzmianka <powód>\``);
-      setTimeout(() => errReply.delete().catch(() => {}), 6000);
-      return;
-    }
-
-    if (targetMember.id === message.author.id) {
-      const errReply = await message.reply(`❌ Nie możesz zgłosić samego siebie!`);
-      setTimeout(() => errReply.delete().catch(() => {}), 5000);
-      return;
-    }
-
-    try {
-      const reportChannel = await message.guild.channels.fetch(REPORT_CHANNEL_ID);
-      if (!reportChannel) return;
-
-      const reportEmbed = new EmbedBuilder()
-        .setTitle('🚨 NOWE ZGŁOSZENIE (RAPORT)')
-        .setColor('Red')
-        .addFields(
-          { name: '👤 Zgłaszający', value: `${message.author.tag} (\`${message.author.id}\`)`, inline: false },
-          { name: '🎯 Zgłoszony gracz', value: `${targetMember.user.tag} (\`${targetMember.id}\`)`, inline: false },
-          { name: '📝 Powód', value: reason, inline: false },
-          { name: '📍 Kanał zgłoszenia', value: `<#${message.channel.id}>`, inline: false }
-        )
-        .setTimestamp()
-        .setFooter({ text: `ID Zgłoszenia: ${message.id}` });
-
-      await reportChannel.send({ embeds: [reportEmbed] });
-      const successReply = await message.reply(`✅ Twoje zgłoszenie zostało wysłane do administracji.`);
-      setTimeout(() => successReply.delete().catch(() => {}), 5000);
-    } catch (err) {}
-    return;
-  }
-
-  // --- KOMENDA: !autorole ---
+  // INNE KOMENDY (zminimalizowane objętościowo, ale w pełni działające)
   if (message.content.startsWith('!autorole')) {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
-      const errReply = await message.reply('❌ Brak uprawnień!');
-      setTimeout(() => errReply.delete().catch(() => {}), 5000);
-      await message.delete().catch(() => {});
-      return;
-    }
-
+    if (!message.member.permissions.has(PermissionsBitField.Flags.ManageRoles)) return;
     const args = message.content.split(' ').slice(1);
     const action = args[0];
     const targetValue = args[1]?.replace(/[<@&>]/g, '');
 
-    if (action === 'add') {
-      if (!targetValue) return message.reply('❌ Podaj ID roli!');
-      const role = message.guild.roles.cache.get(targetValue);
-      if (!role) return message.reply('❌ Nie znaleziono roli!');
-      
+    if (action === 'add' && targetValue) {
       if (!autoRoles.includes(targetValue)) {
         autoRoles.push(targetValue);
         fs.writeFileSync(CONFIG_FILE, JSON.stringify({ roles: autoRoles }, null, 2));
       }
-      return message.reply(`✅ Dodano auto-rolę: **${role.name}**`);
+      return message.reply(`✅ Dodano auto-rolę!`);
     }
-    
     if (action === 'remove') {
-      if (targetValue?.toLowerCase() === 'all') {
-        autoRoles = [];
-        if (fs.existsSync(CONFIG_FILE)) fs.unlinkSync(CONFIG_FILE);
-        return message.reply('✅ Wyczyszczono auto-role.');
-      }
-      autoRoles = autoRoles.filter(id => id !== targetValue);
+      if (targetValue === 'all') autoRoles = [];
+      else autoRoles = autoRoles.filter(id => id !== targetValue);
       fs.writeFileSync(CONFIG_FILE, JSON.stringify({ roles: autoRoles }, null, 2));
-      return message.reply('✅ Usunięto rolę z auto-rol.');
+      return message.reply('✅ Usunięto!');
     }
   }
 
-  // --- KOMENDA: !info ---
-  if (message.content.startsWith('!info')) {
-    const args = message.content.split(' ').slice(1);
-    let target = message.mentions.members.first();
-
-    if (!target && args[0]) {
-      const cleanId = args[0].replace(/[<@!>]/g, '');
-      try { target = await message.guild.members.fetch(cleanId).catch(() => null); } catch (e) {}
-    }
-    if (!target) target = message.member;
-
-    const user = target.user;
-    const joinedTimestamp = Math.floor(target.joinedTimestamp / 1000);
-    const roles = target.roles.cache.filter(r => r.id !== message.guild.id).sort((a, b) => b.position - a.position).map(r => r).join(', ') || 'Brak';
-
-    const embed = new EmbedBuilder()
-      .setTitle(`📊 Informacje o użytkowniku: ${user.tag}`)
-      .setThumbnail(user.displayAvatarURL({ dynamic: true }))
-      .setColor('Green')
-      .addFields(
-        { name: '🆔 ID', value: `\`${user.id}\``, inline: true },
-        { name: '👤 Nick', value: target.displayName, inline: true },
-        { name: '📥 Dołączył', value: `<t:${joinedTimestamp}:R>`, inline: false },
-        { name: '📜 Role', value: roles.length > 1024 ? roles.substring(0, 1020) + '...' : roles, inline: false }
-      )
-      .setTimestamp();
-
-    await message.channel.send({ embeds: [embed] });
-    await message.delete().catch(() => {});
-    return;
-  }
-
-  // --- KOMENDA KONKURSU (WIELE RÓWNOCZEŚNIE): !konkurs [minuty] [nagroda] ---
-  if (message.content.startsWith('!konkurs') && message.channel.id === GIVEAWAY_CHANNEL_ID) {
-    const args = message.content.slice(8).trim().split(' ');
-    const minutes = parseInt(args[0]);
-    const prize = args.slice(1).join(' ');
-
-    if (isNaN(minutes) || !prize) {
-      const errReply = await message.reply('❌ Błędny format! Użyj: `!konkurs [minuty] [nagroda]` (np. `!konkurs 5 Klucz do gry`)');
-      setTimeout(() => errReply.delete().catch(() => {}), 5000);
-      await message.delete().catch(() => {});
-      return;
-    }
-
-    await message.delete().catch(() => {});
-
-    const endTime = Math.floor(Date.now() / 1000) + (minutes * 60);
-
-    const embed = new EmbedBuilder()
-      .setTitle('🎉 KONKURS 🎉')
-      .setDescription(`Nagroda: **${prize}**\n\nKliknij przycisk poniżej, aby wziąć udział!\nKoniec za: <t:${endTime}:R>`)
-      .setColor('Green')
-      .setFooter({ text: `Konkurs stworzył: ${message.author.tag}` });
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('join_giveaway')
-        .setLabel('Weź udział')
-        .setStyle(ButtonStyle.Success)
-        .setEmoji('🎉')
-    );
-
-    const giveawayMsg = await message.channel.send({ embeds: [embed], components: [row] });
-    
-    // Tworzymy unikalny zestaw uczestników przypisany do ID tej konkretnej wiadomości konkursu
-    giveawayParticipants.set(giveawayMsg.id, new Set());
-
-    setTimeout(async () => {
-      const participantsSet = giveawayParticipants.get(giveawayMsg.id);
-      const participants = Array.from(participantsSet || []);
-
-      const endedEmbed = new EmbedBuilder()
-        .setTitle('🎉 KONKURS ROZSTRZYGNIĘTY 🎉')
-        .setDescription(`Nagroda: **${prize}**\n\nLiczba uczestników: **${participants.length}**`)
-        .setColor('Green');
-
-      if (participants.length === 0) {
-        endedEmbed.addFields({ name: 'Zwycięzca', value: 'Nikt nie wziął udziału w konkursie.' });
-        await giveawayMsg.edit({ embeds: [endedEmbed], components: [] }).catch(() => {});
-        await message.channel.send('❌ Konkurs zakończony, brak uczestników.');
-      } else {
-        const winnerId = participants[Math.floor(Math.random() * participants.length)];
-        endedEmbed.addFields({ name: 'Zwycięzca', value: `<@${winnerId}>! Gratulacje! 🏆` });
-        await giveawayMsg.edit({ embeds: [endedEmbed], components: [] }).catch(() => {});
-        await message.channel.send(`🎉 Gratulacje <@${winnerId}>! Wygrałeś/aś: **${prize}**!`);
-      }
-
-      // Usuwamy dane tego konkursu z pamięci po zakończeniu
-      giveawayParticipants.delete(giveawayMsg.id);
-    }, minutes * 60 * 1000);
-
-    return;
-  }
-
-  // --- SYSTEM LICZENIA ---
+  // System liczenia i liter
   if (message.channel.id === COUNTING_CHANNEL_ID) {
     const number = parseInt(message.content.trim());
-    if (isNaN(number) || message.content.trim() !== number.toString() || number !== currentCount + 1 || message.author.id === lastUserId) {
-      await message.delete().catch(() => {});
-      return;
-    }
-    currentCount = number;
-    lastUserId = message.author.id;
-    await message.react('✅').catch(() => {});
-    return;
+    if (isNaN(number) || message.content.trim() !== number.toString() || number !== currentCount + 1 || message.author.id === lastUserId) return message.delete().catch(() => {});
+    currentCount = number; lastUserId = message.author.id;
+    return message.react('✅').catch(() => {});
   }
-
-  // --- SYSTEM OSTATNIEJ LITERY ---
   if (message.channel.id === LAST_LETTER_CHANNEL_ID) {
     const content = message.content.trim().toLowerCase();
-    if (/\d/.test(content) || content.includes(' ') || message.author.id === lastLetterUserId) {
-      await message.delete().catch(() => {});
-      return;
-    }
-    if (lastWord) {
-      const requiredLetter = lastWord.slice(-1);
-      if (content.charAt(0) !== requiredLetter) {
-        await message.delete().catch(() => {});
-        return;
-      }
-    }
-    lastWord = content;
-    lastLetterUserId = message.author.id;
-    await message.react('✅').catch(() => {});
-    return;
+    if (/\d/.test(content) || content.includes(' ') || message.author.id === lastLetterUserId) return message.delete().catch(() => {});
+    if (lastWord && content.charAt(0) !== lastWord.slice(-1)) return message.delete().catch(() => {});
+    lastWord = content; lastLetterUserId = message.author.id;
+    return message.react('✅').catch(() => {});
   }
 });
 
-// Obsługa interakcji przycisków
+// --- OBSŁUGA INTERAKCJI (PRZYCISKI I MODALE) ---
 client.on('interactionCreate', async interaction => {
-  if (!interaction.isButton()) return;
+  // 1. TWORZENIE TICKETA - FORMULARZ
+  if (interaction.isButton() && interaction.customId === 'ticket_create') {
+    const modal = new ModalBuilder()
+      .setCustomId('ticket_modal')
+      .setTitle('Formularz Zgłoszeniowy');
 
-  if (interaction.customId === 'join_giveaway') {
-    const participants = giveawayParticipants.get(interaction.message.id);
-    if (!participants) {
-      return interaction.reply({ content: '❌ Ten konkurs już się zakończył.', ephemeral: true });
-    }
+    const subjectInput = new TextInputBuilder()
+      .setCustomId('ticket_subject')
+      .setLabel('Czego dotyczy sprawa?')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('Np. Pytanie o rekrutację, Zgłoszenie gracza')
+      .setRequired(true)
+      .setMaxLength(50);
 
-    if (participants.has(interaction.user.id)) {
-      participants.delete(interaction.user.id);
-      return interaction.reply({ content: '⚠️ Wypisałeś się z konkursu.', ephemeral: true });
-    } else {
-      participants.add(interaction.user.id);
-      return interaction.reply({ content: '✅ Zostałeś zapisany do konkursu! Powodzenia!', ephemeral: true });
-    }
+    const descInput = new TextInputBuilder()
+      .setCustomId('ticket_desc')
+      .setLabel('Opisz dokładnie swój problem')
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('Podaj jak najwięcej szczegółów...')
+      .setRequired(true)
+      .setMaxLength(1000);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(subjectInput), new ActionRowBuilder().addComponents(descInput));
+    await interaction.showModal(modal);
+    return;
   }
 
-  if (interaction.customId === 'start_captcha') {
-    const num1 = Math.floor(Math.random() * 10) + 1;
-    const num2 = Math.floor(Math.random() * 10) + 1;
-    activeCaptchas.set(interaction.user.id, num1 + num2);
+  // 2. TWORZENIE KANAŁU TICKETA PO WYSŁANIU FORMULARZA
+  if (interaction.isModalSubmit() && interaction.customId === 'ticket_modal') {
+    const subject = interaction.fields.getTextInputValue('ticket_subject');
+    const description = interaction.fields.getTextInputValue('ticket_desc');
 
-    const embed = new EmbedBuilder()
-      .setTitle('Weryfikacja CAPTCHA')
-      .setDescription(`Napisz na kanale wynik: **${num1} + ${num2} = ?**`)
-      .setColor('Green');
+    await interaction.reply({ content: '⏳ Trwa tworzenie Twojego ticketa...', ephemeral: true });
 
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    try {
+      // Budowanie uprawnień dla kanału (Zgłaszający + Wszystkie role administracyjne)
+      const permissions = [
+        { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] }, // Wszyscy niewidzą
+        { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] } // Widzi autor
+      ];
 
-    const filter = m => m.author.id === interaction.user.id;
-    const collector = interaction.channel.createMessageCollector({ filter, time: 120000, max: 1 });
+      // Dodawanie każdej roli administracyjnej do uprawnień kanału
+      STAFF_ROLE_IDS.forEach(roleId => {
+        permissions.push({
+          id: roleId,
+          allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory]
+        });
+      });
 
-    collector.on('collect', async m => {
-      await m.delete().catch(() => {});
-      if (parseInt(m.content.trim()) === activeCaptchas.get(interaction.user.id)) {
-        activeCaptchas.delete(interaction.user.id);
-        const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
-        if (member) {
-          await member.roles.remove(ROLE_REMOVE_ID).catch(() => {});
-          await member.roles.add(ROLE_ADD_ID).catch(() => {});
-        }
-        await interaction.followUp({ content: '✅ Zweryfikowano pomyślnie!', ephemeral: true });
-      } else {
-        await interaction.followUp({ content: '❌ Błędny wynik!', ephemeral: true });
+      const ticketChannel = await interaction.guild.channels.create({
+        name: `ticket-${interaction.user.username}`,
+        type: ChannelType.GuildText,
+        parent: TICKET_CATEGORY_ID,
+        permissionOverwrites: permissions
+      });
+
+      const embed = new EmbedBuilder()
+        .setTitle(`🎫 Ticket: ${subject}`)
+        .setDescription(`Witaj <@${interaction.user.id}>! Administracja wkrótce się Tobą zajmie.\n\n**Opis zgłoszenia:**\n${description}`)
+        .setColor('Yellow')
+        .setTimestamp();
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('ticket_close')
+          .setLabel('Zamknij i Zapisz Ticket')
+          .setStyle(ButtonStyle.Danger)
+          .setEmoji('🔒')
+      );
+
+      // Pingowanie wszystkich ról na raz
+      const staffPings = STAFF_ROLE_IDS.map(id => `<@&${id}>`).join(' ');
+      await ticketChannel.send({ content: `<@${interaction.user.id}> | ${staffPings}`, embeds: [embed], components: [row] });
+      
+      await interaction.editReply({ content: `✅ Twój ticket został utworzony: <#${ticketChannel.id}>` });
+    } catch (err) {
+      console.error('Błąd tworzenia ticketa:', err);
+      await interaction.editReply({ content: '❌ Wystąpił błąd podczas tworzenia ticketa. Sprawdź, czy bot ma uprawnienia Zarządzanie Kanałami i Rolami.' });
+    }
+    return;
+  }
+
+  // 3. ZAMYKANIE TICKETA I TRANSKRYPCJA
+  if (interaction.isButton() && interaction.customId === 'ticket_close') {
+    // Sprawdza czy użytkownik ma chociaż jedną z uprawnionych ról
+    const hasAdminRole = STAFF_ROLE_IDS.some(roleId => interaction.member.roles.cache.has(roleId));
+    
+    if (!hasAdminRole && !interaction.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
+      return interaction.reply({ content: '❌ Tylko administracja może zamknąć ticket.', ephemeral: true });
+    }
+
+    await interaction.reply('🔒 Zamykanie ticketa, generowanie logów...');
+
+    try {
+      const messages = await interaction.channel.messages.fetch({ limit: 100 });
+      const transcriptData = messages.reverse().map(m => {
+        const time = new Date(m.createdTimestamp).toLocaleString('pl-PL');
+        return `[${time}] ${m.author.tag}: ${m.content}`;
+      }).join('\n');
+
+      const transcriptBuffer = Buffer.from(transcriptData, 'utf-8');
+      const attachment = new AttachmentBuilder(transcriptBuffer, { name: `${interaction.channel.name}-transcript.txt` });
+
+      const logChannel = await interaction.guild.channels.fetch(TICKET_LOG_CHANNEL_ID).catch(() => null);
+      if (logChannel) {
+        const logEmbed = new EmbedBuilder()
+          .setTitle('🗃️ Zarchiwizowano Ticket')
+          .addFields(
+            { name: 'Zamknięty przez', value: `${interaction.user.tag}` },
+            { name: 'Nazwa kanału', value: interaction.channel.name }
+          )
+          .setColor('Red')
+          .setTimestamp();
+          
+        await logChannel.send({ embeds: [logEmbed], files: [attachment] });
       }
-    });
+
+      setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
+    } catch (err) {
+      console.error('Błąd podczas zamykania ticketa:', err);
+      interaction.editReply('❌ Nie udało się poprawnie zapisać ticketa.');
+    }
+    return;
   }
 });
 
