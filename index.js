@@ -24,7 +24,7 @@ const client = new Client({
   ] 
 });
 
-// Konfiguracja ID kanałów i ról
+// Konfiguracja ID kanałów, ról oraz chronionego użytkownika
 const VERIFY_CHANNEL_ID = '1532519461414895827';
 const ROLE_REMOVE_ID = '1532514463972855858';
 const ROLE_ADD_ID = '1532411605592047636';
@@ -32,6 +32,9 @@ const ROLE_ADD_ID = '1532411605592047636';
 const COUNTING_CHANNEL_ID = '1532453185413972038';
 let currentCount = 0;
 let lastUserId = null;
+
+// ID użytkownika, którego nie można pingować
+const PROTECTED_USER_ID = '1463274528930009332';
 
 const activeCaptchas = new Map();
 
@@ -41,6 +44,17 @@ client.on('ready', () => {
 
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
+
+  // --- ANTY-PING KONKRETNEJ OSOBY ---
+  // Sprawdzamy czy w wiadomości (lub jej wzmiankach) znajduje się chroniony użytkownik
+  if (message.mentions.users.has(PROTECTED_USER_ID)) {
+    await message.delete().catch(() => {});
+    
+    // Wysyłamy krótkie ostrzeżenie, które znika po 5 sekundach
+    const warning = await message.channel.send(`⚠️ <@${message.author.id}>, nie wolno oznaczać tej osoby!`);
+    setTimeout(() => warning.delete().catch(() => {}), 5000);
+    return;
+  }
 
   // Komenda weryfikacji
   if (message.content === '!setup-weryfikacja' && message.channel.id === VERIFY_CHANNEL_ID) {
@@ -71,11 +85,9 @@ client.on('messageCreate', async message => {
       return;
     }
 
-    // Jeśli to zła kolejność (np. po 1 napisał 5) -> usuń wiadomość i daj reakcję
+    // Jeśli to zła kolejność -> usuń wiadomość
     if (number !== currentCount + 1) {
       await message.delete().catch(() => {});
-      // Opcjonalnie wysłanie tymczasowej reakcji/wiadomości niemożliwe po usunięciu, 
-      // ale bot może wysłać i szybko usunąć powiadomienie lub po prostu usunąć błąd.
       return;
     }
 
