@@ -45,14 +45,20 @@ client.on('ready', () => {
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
 
-  // --- ANTY-PING KONKRETNEJ OSOBY ---
-  // Sprawdzamy czy w wiadomości (lub jej wzmiankach) znajduje się chroniony użytkownik
+  // --- ANTY-PING Z TIMEOUTEM 10 MINUT ---
   if (message.mentions.users.has(PROTECTED_USER_ID)) {
     await message.delete().catch(() => {});
     
-    // Wysyłamy krótkie ostrzeżenie, które znika po 5 sekundach
-    const warning = await message.channel.send(`⚠️ <@${message.author.id}>, nie wolno oznaczać tej osoby!`);
-    setTimeout(() => warning.delete().catch(() => {}), 5000);
+    try {
+      const member = await message.guild.members.fetch(message.author.id);
+      // Timeout na 10 minut (10 * 60 * 1000 milisekund)
+      await member.timeout(10 * 60 * 1000, 'Próba oznaczania chronionego użytkownika');
+      
+      const warning = await message.channel.send(`⚠️ <@${message.author.id}>, nie wolno oznaczać tej osoby! Otrzymujesz timeout na 10 minut.`);
+      setTimeout(() => warning.delete().catch(() => {}), 7000);
+    } catch (err) {
+      console.error('Nie udało się nałożyć timeoutu (upewnij się, że bot ma wyższą rolę niż użytkownik i uprawnienie do moderowania):', err);
+    }
     return;
   }
 
@@ -79,25 +85,21 @@ client.on('messageCreate', async message => {
   if (message.channel.id === COUNTING_CHANNEL_ID) {
     const number = parseInt(message.content.trim());
     
-    // Jeśli to nie liczba albo zawiera dodatkowy tekst -> usuń
     if (isNaN(number) || message.content.trim() !== number.toString()) {
       await message.delete().catch(() => {});
       return;
     }
 
-    // Jeśli to zła kolejność -> usuń wiadomość
     if (number !== currentCount + 1) {
       await message.delete().catch(() => {});
       return;
     }
 
-    // Jeśli ta sama osoba pisze pod rząd -> usuń wiadomość
     if (message.author.id === lastUserId) {
       await message.delete().catch(() => {});
       return;
     }
 
-    // Poprawna liczba
     currentCount = number;
     lastUserId = message.author.id;
     await message.react('✅').catch(() => {});
