@@ -21,7 +21,7 @@ const client = new Client({
     GatewayIntentBits.GuildMessages, 
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildVoiceStates // Wymagane do wykrywania ruchu na kanałach głosowych!
+    GatewayIntentBits.GuildVoiceStates
   ] 
 });
 
@@ -33,7 +33,6 @@ const ROLE_ADD_ID = '1532411605592047636';
 const COUNTING_CHANNEL_ID = '1532453185413972038';
 const GIVEAWAY_CHANNEL_ID = '1532418596159095105';
 
-// --- KONFIGURACJA WŁASNYCH KANAŁÓW GŁOSOWYCH ---
 const CREATE_VOICE_CHANNEL_ID = '1532548526825803878'; 
 const VOICE_CATEGORY_ID = '1532550008833048796';
 
@@ -44,11 +43,30 @@ const PROTECTED_USER_ID = '1463274528930009332';
 
 const activeCaptchas = new Map();
 const giveawayParticipants = new Map();
-// Śledzenie stworzonych kanałów głosowych: Set<channelId>
 const tempVoiceChannels = new Set();
 
-client.on('ready', () => {
+client.on('ready', async () => {
   console.log(`Zalogowano jako ${client.user.tag}! Bot gotowy do pracy.`);
+
+  // Automatyczne pobranie ostatniej liczby z kanału liczenia po starcie bota
+  try {
+    const countingChannel = await client.channels.fetch(COUNTING_CHANNEL_ID);
+    if (countingChannel) {
+      const messages = await countingChannel.messages.fetch({ limit: 5 });
+      // Szukamy pierwszej poprawnej liczby od góry historii
+      for (const msg of messages.values()) {
+        const num = parseInt(msg.content.trim());
+        if (!isNaN(msg.content.trim()) && msg.content.trim() === num.toString()) {
+          currentCount = num;
+          lastUserId = msg.author.id;
+          console.log(`[LICZENIE] Zsynchronizowano! Ostatnia liczba to: ${currentCount}`);
+          break;
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Nie udało się pobrać historii liczenia:', err);
+  }
 });
 
 // --- OBSŁUGA KANAŁÓW GŁOSOWYCH (WŁASNY KANAŁ) ---
@@ -56,13 +74,11 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
   const member = newState.member;
   if (!member || member.user.bot) return;
 
-  // Użytkownik wszedł na kanał tworzący
   if (newState.channelId === CREATE_VOICE_CHANNEL_ID) {
     try {
       const guild = newState.guild;
       const channelName = `🎙️ Kanał - ${member.user.username}`;
 
-      // Tworzenie prywatnego kanału głosowego
       const channel = await guild.channels.create({
         name: channelName,
         type: ChannelType.GuildVoice,
@@ -74,7 +90,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
           },
           {
             id: member.id,
-            allow: [PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.MoveMembers], // Właściciel może zarządzać kanałem
+            allow: [PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.MoveMembers],
           }
         ]
       });
@@ -86,7 +102,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     }
   }
 
-  // Użytkownik opuścił kanał (sprawdzamy czy to był pusty kanał tymczasowy)
   if (oldState.channelId && tempVoiceChannels.has(oldState.channelId)) {
     const oldChannel = oldState.channel;
     if (oldChannel && oldChannel.members.size === 0) {
