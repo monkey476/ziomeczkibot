@@ -34,7 +34,8 @@ const ROLE_ADD_ID = '1532411605592047636';
 
 const COUNTING_CHANNEL_ID = '1532453185413972038';
 const GIVEAWAY_CHANNEL_ID = '1532418596159095105';
-const LAST_LETTER_CHANNEL_ID = '1532694623993200730'; // Kanał do gry w ostatnią literę
+const LAST_LETTER_CHANNEL_ID = '1532694623993200730';
+const REPORT_CHANNEL_ID = '1532723262390272080'; // Kanał dla administracji na zgłoszenia
 
 const CREATE_VOICE_CHANNEL_ID = '1532548526825803878'; 
 const VOICE_CATEGORY_ID = '1532550008833048796';
@@ -174,6 +175,53 @@ client.on('messageCreate', async message => {
       setTimeout(() => warning.delete().catch(() => {}), 7000);
     } catch (err) {
       console.error('Nie udało się nałożyć timeoutu:', err);
+    }
+    return;
+  }
+
+  // --- KOMENDA: !report @użytkownik <powód> (Wiadomość NIE jest usuwana) ---
+  if (message.content.startsWith('!report')) {
+    const args = message.content.split(' ').slice(1);
+    const targetMember = message.mentions.members.first();
+    const reason = args.slice(1).join(' ');
+
+    if (!targetMember || !reason) {
+      const errReply = await message.reply(`❌ Błędny format! Użyj: \`!report @wzmianka <powód>\``);
+      setTimeout(() => errReply.delete().catch(() => {}), 6000);
+      return;
+    }
+
+    if (targetMember.id === message.author.id) {
+      const errReply = await message.reply(`❌ Nie możesz zgłosić samego siebie!`);
+      setTimeout(() => errReply.delete().catch(() => {}), 5000);
+      return;
+    }
+
+    try {
+      const reportChannel = await message.guild.channels.fetch(REPORT_CHANNEL_ID);
+      if (!reportChannel) {
+        console.error('Nie znaleziono kanału zgłoszeń!');
+        return;
+      }
+
+      const reportEmbed = new EmbedBuilder()
+        .setTitle('🚨 NOWE ZGŁOSZENIE (RAPORT)')
+        .setColor('Red')
+        .addFields(
+          { name: '👤 Zgłaszający', value: `${message.author.tag} (\`${message.author.id}\`)`, inline: false },
+          { name: '🎯 Zgłoszony gracz', value: `${targetMember.user.tag} (\`${targetMember.id}\`)`, inline: false },
+          { name: '📝 Powód', value: reason, inline: false },
+          { name: '📍 Kanał zgłoszenia', value: `<#${message.channel.id}>`, inline: false }
+        )
+        .setTimestamp()
+        .setFooter({ text: `ID Zgłoszenia: ${message.id}` });
+
+      await reportChannel.send({ embeds: [reportEmbed] });
+
+      const successReply = await message.reply(`✅ Twoje zgłoszenie zostało wysłane do administracji.`);
+      setTimeout(() => successReply.delete().catch(() => {}), 5000);
+    } catch (err) {
+      console.error('Błąd podczas wysyłania raportu:', err);
     }
     return;
   }
