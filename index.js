@@ -48,7 +48,6 @@ const tempVoiceChannels = new Set();
 client.on('ready', async () => {
   console.log(`Zalogowano jako ${client.user.tag}! Bot gotowy do pracy.`);
 
-  // Automatyczne pobranie ostatniej liczby z kanału liczenia po starcie bota
   try {
     const countingChannel = await client.channels.fetch(COUNTING_CHANNEL_ID);
     if (countingChannel) {
@@ -68,7 +67,7 @@ client.on('ready', async () => {
   }
 });
 
-// --- OBSŁUGA KANAŁÓW GŁOSOWYCH (WŁASNY KANAŁ) ---
+// --- OBSŁUGA KANAŁÓW GŁOSOWYCH (WŁASNY KANAł) ---
 client.on('voiceStateUpdate', async (oldState, newState) => {
   const member = newState.member;
   if (!member || member.user.bot) return;
@@ -129,23 +128,30 @@ client.on('messageCreate', async message => {
     return;
   }
 
-  // --- KOMENDA: !info <gracz> ---
+  // --- KOMENDA: !info <gracz / id> ---
   if (message.content.startsWith('!info')) {
     const args = message.content.split(' ').slice(1);
-    let target = message.mentions.members.first() || message.guild.members.cache.get(args[0]) || message.member;
+    let target = message.mentions.members.first();
 
-    if (args[0] && !target && message.guild) {
+    // Jeśli podano ID lub tekst zamiast oznaczenia
+    if (!target && args[0]) {
+      const cleanId = args[0].replace(/[<@!>]/g, ''); // czyszczenie z ewentualnych oznaczeń
       try {
-        const fetchedMembers = await message.guild.members.fetch({ query: args.join(' '), limit: 1 });
-        target = fetchedMembers.first();
+        target = await message.guild.members.fetch(cleanId).catch(() => null);
       } catch (e) {}
+
+      // Jeśli nie znaleziono po ID, próbujemy wyszukać po nazwie
+      if (!target) {
+        try {
+          const fetchedMembers = await message.guild.members.fetch({ query: args.join(' '), limit: 1 });
+          target = fetchedMembers.first();
+        } catch (e) {}
+      }
     }
 
+    // Jeśli nadal brak targetu, bierzemy autora wiadomości
     if (!target) {
-      const errReply = await message.reply('❌ Nie znaleziono takiego użytkownika!');
-      setTimeout(() => errReply.delete().catch(() => {}), 5000);
-      await message.delete().catch(() => {});
-      return;
+      target = message.member;
     }
 
     const user = target.user;
