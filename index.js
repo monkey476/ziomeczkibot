@@ -34,6 +34,7 @@ const ROLE_ADD_ID = '1532411605592047636';
 
 const COUNTING_CHANNEL_ID = '1532453185413972038';
 const GIVEAWAY_CHANNEL_ID = '1532418596159095105';
+const LAST_LETTER_CHANNEL_ID = '1532694623993200730'; // Nowy kanał do gry w ostatnią literę
 
 const CREATE_VOICE_CHANNEL_ID = '1532548526825803878'; 
 const VOICE_CATEGORY_ID = '1532550008833048796';
@@ -41,9 +42,13 @@ const VOICE_CATEGORY_ID = '1532550008833048796';
 let currentCount = 0;
 let lastUserId = null;
 
+// Zmienne dla gry w ostatnią literę
+let lastWord = null;
+let lastLetterUserId = null;
+
 const PROTECTED_USER_ID = '1463274528930009332';
 
-// Plik do zapisu auto-rol (wspiera teraz wiele ról)
+// Plik do zapisu auto-rol
 const CONFIG_FILE = path.join(__dirname, 'autorole.json');
 let autoRoles = [];
 
@@ -78,6 +83,26 @@ client.on('ready', async () => {
   } catch (err) {
     console.error('Nie udało się pobrać historii liczenia:', err);
   }
+
+  // Synchronizacja ostatniego słowa z kanału "Ostatnia litera"
+  try {
+    const letterChannel = await client.channels.fetch(LAST_LETTER_CHANNEL_ID);
+    if (letterChannel) {
+      const messages = await letterChannel.messages.fetch({ limit: 5 });
+      for (const msg of messages.values()) {
+        const content = msg.content.trim();
+        // Sprawdź czy wiadomość nie ma cyfr i składa się z jednego słowa/wyrazu
+        if (content && !/\d/.test(content)) {
+          lastWord = content.toLowerCase();
+          lastLetterUserId = msg.author.id;
+          console.log(`[OSTATNIA LITERA] Zsynchronizowano! Ostatnie słowo to: ${lastWord}`);
+          break;
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Nie udało się pobrać historii ostatniej litery:', err);
+  }
 });
 
 // --- AUTOMATYCZNE NADAWANIE RÓL PO WEJŚCIU NA SERWER ---
@@ -93,7 +118,7 @@ client.on('guildMemberAdd', async member => {
   }
 });
 
-// --- OBSŁUGA KANAŁÓW GŁOSOWYCH (WŁASNY KANAł) ---
+// --- OBSŁUGA KANAŁÓW GŁOSOWYCH ---
 client.on('voiceStateUpdate', async (oldState, newState) => {
   const member = newState.member;
   if (!member || member.user.bot) return;
@@ -255,7 +280,7 @@ client.on('messageCreate', async message => {
         target = await message.guild.members.fetch(cleanId).catch(() => null);
       } catch (e) {}
 
-      if (!target) {
+      if (!target} {
         try {
           const fetchedMembers = await message.guild.members.fetch({ query: args.join(' '), limit: 1 });
           target = fetchedMembers.first();
@@ -394,6 +419,46 @@ client.on('messageCreate', async message => {
 
     currentCount = number;
     lastUserId = message.author.id;
+    await message.react('✅').catch(() => {});
+    return;
+  }
+
+  // --- SYSTEM OSTATNIEJ LITERY ---
+  if (message.channel.id === LAST_LETTER_CHANNEL_ID) {
+    const content = message.content.trim().toLowerCase();
+
+    // 1. Sprawdź czy wiadomość zawiera jakiekolwiek cyfry lub spacje (ma być jedno słowo)
+    if (/\d/.test(content) || content.includes(' ')) {
+      await message.delete().catch(() => {});
+      const warn = await message.channel.send(`❌ <@${message.author.id}>, w tym kanale można pisać **tylko pojedyncze słowa** (bez cyfr i spacji)!`);
+      setTimeout(() => warn.delete().catch(() => {}), 4000);
+      return;
+    }
+
+    // 2. Blokada pisania dwa razy pod rząd przez tę samą osobę (opcjonalne, ale zapobiega spamowi - jeśli nie chcesz, usuń ten blok)
+    if (message.author.id === lastLetterUserId) {
+      await message.delete().catch(() => {});
+      const warn = await message.channel.send(`❌ <@${message.author.id}>, musisz poczekać, aż ktoś inny napisze słowo!`);
+      setTimeout(() => warn.delete().catch(() => {}), 4000);
+      return;
+    }
+
+    // 3. Sprawdź poprawność litery, jeśli to kolejne słowo w grze
+    if (lastWord) {
+      const requiredLetter = lastWord.slice(-1);
+      const firstLetter = content.charAt(0);
+
+      if (firstLetter !== requiredLetter) {
+        await message.delete().catch(() => {});
+        const warn = await message.channel.send(`❌ <@${message.author.id}>, Twoje słowo musi zaczynać się na literę **"${requiredLetter.toUpperCase()}"** (ostatnia litera słowa "${lastWord}")!`);
+        setTimeout(() => warn.delete().catch(() => {}), 5000);
+        return;
+      }
+    }
+
+    // Jeśli wszystko OK
+    lastWord = content;
+    lastLetterUserId = message.author.id;
     await message.react('✅').catch(() => {});
     return;
   }
