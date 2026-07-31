@@ -1,5 +1,7 @@
 const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, ChannelType, PermissionsBitField } = require('discord.js');
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 
 // Serwer HTTP dla Render.com + auto-ping
 const app = express();
@@ -41,6 +43,17 @@ let lastUserId = null;
 
 const PROTECTED_USER_ID = '1463274528930009332';
 
+// Plik do zapisu auto-roli, żeby nie znikała po restarcie bota
+const CONFIG_FILE = path.join(__dirname, 'autorole.json');
+let autoRoleId = null;
+
+if (fs.existsSync(CONFIG_FILE)) {
+  try {
+    const data = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+    autoRoleId = data.roleId || null;
+  } catch (e) {}
+}
+
 const activeCaptchas = new Map();
 const giveawayParticipants = new Map();
 const tempVoiceChannels = new Set();
@@ -64,6 +77,17 @@ client.on('ready', async () => {
     }
   } catch (err) {
     console.error('Nie udało się pobrać historii liczenia:', err);
+  }
+});
+
+// --- AUTOMATYCZNE NADAWANIE ROLI PO WEJŚCIU NA SERWER ---
+client.on('guildMemberAdd', async member => {
+  if (!autoRoleId) return;
+  try {
+    await member.roles.add(autoRoleId);
+    console.log(`[AUTOROLE] Nadano rolę o ID ${autoRoleId dla użytkownika ${member.user.tag}`);
+  } catch (err) {
+    console.error('Nie udało się nadać auto-roli nowemu użytkownikowi:', err);
   }
 });
 
@@ -128,19 +152,71 @@ client.on('messageCreate', async message => {
     return;
   }
 
+  // --- KOMENDA: !autorole add <id> / remove ---
+  if (message.content.startsWith('!autorole')) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
+      const errReply = await message.reply('❌ Nie masz uprawnień do zarządzania rolami!');
+      setTimeout(() => errReply.delete().catch(() => {}), 5000);
+      await message.delete().catch(() => {});
+      return;
+    }
+
+    const args = message.content.split(' ').slice(1);
+    const action = args[0];
+    const roleId = args[1]?.replace(/[<@&>]/g, '');
+
+    if (action === 'add') {
+      if (!roleId) {
+        const errReply = await message.reply('❌ Podaj ID roli! Użyj: `!autorole add <id_roli>`');
+        setTimeout(() => errReply.delete().catch(() => {}), 5000);
+        await message.delete().catch(() => {});
+        return;
+      }
+
+      const role = message.guild.roles.cache.get(roleId);
+      if (!role) {
+        const errReply = await message.reply('❌ Nie znaleziono takiej roli na tym serwerze!');
+        setTimeout(() => errReply.delete().catch(() => {}), 5000);
+        await message.delete().catch(() => {});
+        return;
+      }
+
+      autoRoleId = roleId;
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify({ roleId: autoRoleId }, null, 2));
+
+      const successReply = await message.reply(`✅ Pomyślnie ustawiono auto-rolę na: **${role.name}** (\`${roleId}\`) dla nowych użytkowników.`);
+      setTimeout(() => successReply.delete().catch(() => {}), 7000);
+      await message.delete().catch(() => {});
+      return;
+    } 
+    
+    if (action === 'remove' || action === 'off') {
+      autoRoleId = null;
+      if (fs.existsSync(CONFIG_FILE)) fs.unlinkSync(CONFIG_FILE);
+
+      const successReply = await message.reply('✅ Wyłączono system auto-roli.');
+      setTimeout(() => successReply.delete().catch(() => {}), 5000);
+      await message.delete().catch(() => {});
+      return;
+    }
+
+    const infoReply = await message.reply(`ℹ️ Aktualna auto-rola: ${autoRoleId ? `<@&${autoRoleId}>` : 'Brak'}\nUżycie: \`!autorole add <id>\` lub \`!autorole remove\``);
+    setTimeout(() => infoReply.delete().catch(() => {}), 7000);
+    await message.delete().catch(() => {});
+    return;
+  }
+
   // --- KOMENDA: !info <gracz / id> ---
   if (message.content.startsWith('!info')) {
     const args = message.content.split(' ').slice(1);
     let target = message.mentions.members.first();
 
-    // Jeśli podano ID lub tekst zamiast oznaczenia
     if (!target && args[0]) {
-      const cleanId = args[0].replace(/[<@!>]/g, ''); // czyszczenie z ewentualnych oznaczeń
+      const cleanId = args[0].replace(/[<@!>]/g, '');
       try {
         target = await message.guild.members.fetch(cleanId).catch(() => null);
       } catch (e) {}
 
-      // Jeśli nie znaleziono po ID, próbujemy wyszukać po nazwie
       if (!target) {
         try {
           const fetchedMembers = await message.guild.members.fetch({ query: args.join(' '), limit: 1 });
@@ -149,7 +225,6 @@ client.on('messageCreate', async message => {
       }
     }
 
-    // Jeśli nadal brak targetu, bierzemy autora wiadomości
     if (!target) {
       target = message.member;
     }
