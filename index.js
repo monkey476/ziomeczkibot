@@ -53,7 +53,6 @@ client.on('ready', async () => {
     const countingChannel = await client.channels.fetch(COUNTING_CHANNEL_ID);
     if (countingChannel) {
       const messages = await countingChannel.messages.fetch({ limit: 5 });
-      // Szukamy pierwszej poprawnej liczby od góry historii
       for (const msg of messages.values()) {
         const num = parseInt(msg.content.trim());
         if (!isNaN(msg.content.trim()) && msg.content.trim() === num.toString()) {
@@ -127,6 +126,52 @@ client.on('messageCreate', async message => {
     } catch (err) {
       console.error('Nie udało się nałożyć timeoutu:', err);
     }
+    return;
+  }
+
+  // --- KOMENDA: !info <gracz> ---
+  if (message.content.startsWith('!info')) {
+    const args = message.content.split(' ').slice(1);
+    let target = message.mentions.members.first() || message.guild.members.cache.get(args[0]) || message.member;
+
+    if (args[0] && !target && message.guild) {
+      try {
+        const fetchedMembers = await message.guild.members.fetch({ query: args.join(' '), limit: 1 });
+        target = fetchedMembers.first();
+      } catch (e) {}
+    }
+
+    if (!target) {
+      const errReply = await message.reply('❌ Nie znaleziono takiego użytkownika!');
+      setTimeout(() => errReply.delete().catch(() => {}), 5000);
+      await message.delete().catch(() => {});
+      return;
+    }
+
+    const user = target.user;
+    const joinedTimestamp = Math.floor(target.joinedTimestamp / 1000);
+    const createdTimestamp = Math.floor(user.createdTimestamp / 1000);
+    const roles = target.roles.cache.filter(r => r.id !== message.guild.id).sort((a, b) => b.position - a.position).map(r => r).join(', ') || 'Brak ról';
+
+    const embed = new EmbedBuilder()
+      .setTitle(`📊 Informacje o użytkowniku: ${user.tag}`)
+      .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 512 }))
+      .setColor('Green')
+      .addFields(
+        { name: '🆔 ID Użytkownika', value: `\`${user.id}\``, inline: true },
+        { name: '👤 Nazwa / Nick', value: `${target.displayName} (${user.username})`, inline: true },
+        { name: '🤖 Typ konta', value: user.bot ? 'Bot' : 'Człowiek', inline: true },
+        { name: '📥 Dołączył na serwer', value: `<t:${joinedTimestamp}:F>\n(<t:${joinedTimestamp}:R>)`, inline: false },
+        { name: '🎂 Założył konto Discord', value: `<t:${createdTimestamp}:F>\n(<t:${createdTimestamp}:R>)`, inline: false },
+        { name: '🛡️ Najwyższa rola', value: `${target.roles.highest}`, inline: true },
+        { name: '⏳ Status Timeoutu', value: target.isCommunicationDisabled() ? `Wyciszony do: <t:${Math.floor(target.communicationDisabledUntilTimestamp / 1000)}:R>` : 'Brak wyciszenia', inline: true },
+        { name: '📜 Role użytkownika', value: roles.length > 1024 ? roles.substring(0, 1020) + '...' : roles, inline: false }
+      )
+      .setFooter({ text: `Komendę wywołał: ${message.author.tag}`, iconURL: message.author.displayAvatarURL() })
+      .setTimestamp();
+
+    await message.channel.send({ embeds: [embed] });
+    await message.delete().catch(() => {});
     return;
   }
 
