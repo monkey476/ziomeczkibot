@@ -1,14 +1,14 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 const http = require('http');
 
-// Tworzenie instancji bota ze wszystkimi potrzebnymi uprawnieniami (w tym GuildInvites!)
+// Tworzenie instancji bota ze wszystkimi potrzebnymi uprawnieniami
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildInvites // <--- WYMAGANE DO ŚLEDZENIA ZAPROSZEŃ!
+        GatewayIntentBits.GuildMembers, // Wymagane do działania powitań!
+        GatewayIntentBits.GuildInvites
     ]
 });
 
@@ -26,14 +26,15 @@ server.listen(3000, () => {
 client.once('ready', () => {
     console.log(`✅ Zalogowano pomyślnie jako: ${client.user.tag}`);
     
-    // Ładowanie wszystkich systemów bota, w tym nowego modułu zaproszeń
+    // Ładowanie wszystkich systemów bota
     require('./konkurs.js')(client);
     require('./report.js')(client);
     require('./weryfikacja.js')(client);
     require('./tickety.js')(client);
     require('./liczenie.js')(client);
     require('./ostatnia-litera.js')(client);
-    require('./invite.js')(client); // <--- DODANO MODUŁ ZAPROSZEŃ
+    require('./invite.js')(client);
+    require('./lobby.js')(client);
 });
 
 // Logowanie za pomocą zmiennej środowiskowej DISCORD_TOKEN
