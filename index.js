@@ -1,13 +1,13 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 const http = require('http');
 
-// Tworzenie instancji bota ze wszystkimi potrzebnymi uprawnieniami
+// Tworzenie instancji bota ze wszystkimi potrzebnymi uprawnieniami (w tym uprawnieniami do pobierania detali użytkowników)
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers, // Wymagane do działania powitań i AUTOROLI!
+        GatewayIntentBits.GuildMembers, // Wymagane do działania powitań, autoroli i dokładnego info o graczu!
         GatewayIntentBits.GuildInvites
     ]
 });
@@ -35,7 +35,8 @@ client.once('ready', () => {
     require('./ostatnia-litera.js')(client);
     require('./invite.js')(client);
     require('./lobby.js')(client);
-    require('./role.js')(client); // <--- DODANO MODUŁ AUTOROLI
+    require('./role.js')(client);
+    require('./info.js')(client); // <--- DODANO MODUŁ INFORMACJI O GRACZU
 });
 
 // Logowanie za pomocą zmiennej środowiskowej DISCORD_TOKEN
