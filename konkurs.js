@@ -15,16 +15,15 @@ module.exports = (client) => {
 
         if (message.content.startsWith('!konkurs') && message.channel.id === GIVEAWAY_CHANNEL_ID) {
             
-            // Brak usuwania wiadomości - komenda zostaje, brak bugów wizualnych!
-
             const args = message.content.slice(8).trim().split(/\s+/);
             
             let timeMs = 0;
-            let prize = '';
+            let rawPrizeText = '';
 
             const dateRegex = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/;
             const timeRegex = /^(\d{1,2}):(\d{2})$/;
 
+            // Sprawdzanie czy podano datę DD.MM.YYYY HH:MM
             if (args.length >= 3 && dateRegex.test(args[0]) && timeRegex.test(args[1])) {
                 const dateMatch = args[0].match(dateRegex);
                 const timeMatch = args[1].match(timeRegex);
@@ -40,18 +39,19 @@ module.exports = (client) => {
                 targetDate.setHours(hour, minute, 0, 0);
 
                 timeMs = targetDate.getTime() - Date.now();
-                prize = args.slice(2).join(' ');
+                rawPrizeText = args.slice(2).join(' ');
             } 
+            // Sprawdzanie czy podano po prostu minuty
             else if (args.length >= 2 && /^\d+$/.test(args[0])) {
                 const minutes = parseInt(args[0], 10);
                 if (!isNaN(minutes)) {
                     timeMs = minutes * 60 * 1000;
-                    prize = args.slice(1).join(' ');
+                    rawPrizeText = args.slice(1).join(' ');
                 }
             }
 
-            if (isNaN(timeMs) || timeMs === 0 || !prize) {
-                const errReply = await message.reply(`❌ Błędny format!\nUżyj: \`!konkurs [minuty] [nagroda]\` LUB \`!konkurs [DD.MM.YYYY] [HH:MM] [nagroda]\`\nNp: \`!konkurs 01.08.2026 15:00 Gra XYZ\``);
+            if (isNaN(timeMs) || timeMs === 0 || !rawPrizeText) {
+                const errReply = await message.reply(`❌ Błędny format!\nUżyj: \`!konkurs [minuty] [nagroda] | [wymagania]\` LUB \`!konkurs [DD.MM.YYYY] [HH:MM] [nagroda] | [wymagania]\`\nNp: \`!konkurs 01.08.2026 19:00 1B na nowym trybie | Wbicie na Ziomeczki.gg\``);
                 setTimeout(() => errReply.delete().catch(() => {}), 15000);
                 return;
             }
@@ -68,6 +68,16 @@ module.exports = (client) => {
                 return;
             }
 
+            // ODDZIELANIE NAGRODY OD WYMAGAŃ (za pomocą znaku "|")
+            let prize = rawPrizeText;
+            let requirements = 'Brak';
+
+            if (rawPrizeText.includes('|')) {
+                const parts = rawPrizeText.split('|');
+                prize = parts[0].trim();
+                requirements = parts.slice(1).join('|').trim(); // W razie gdyby ktoś użył więcej niż jednego znaku "|"
+            }
+
             const endTime = Math.floor((Date.now() + timeMs) / 1000);
 
             const embed = new EmbedBuilder()
@@ -77,11 +87,12 @@ module.exports = (client) => {
                     `\n` +
                     `> ⏳ **Koniec:** <t:${endTime}:R> (<t:${endTime}:t>)\n` +
                     `> 👑 **Host:** ${message.author}\n` +
+                    `> 📋 **Wymagania:** ${requirements}\n` +
                     `> 👥 **Uczestnicy:** \`0\`\n\n` +
                     `👇 *Kliknij zielony przycisk poniżej, aby wziąć udział!*`
                 )
                 .setColor('#FFD700')
-                .setThumbnail(ZIOMECZKI_LOGO_URL) // <--- Grafika w rogu!
+                .setThumbnail(ZIOMECZKI_LOGO_URL) 
                 .setFooter({ text: 'Powodzenia!', iconURL: client.user.displayAvatarURL() })
                 .setTimestamp(endTime * 1000);
 
@@ -114,17 +125,17 @@ module.exports = (client) => {
                     .setAuthor({ name: '🎊 KONKURS ZAKOŃCZONY 🎊', iconURL: message.guild.iconURL({ dynamic: true }) || null })
                     .setTitle(`🎁 Nagroda: **${prize}**`)
                     .setColor('#2B2D31')
-                    .setThumbnail(ZIOMECZKI_LOGO_URL) // <--- Grafika w rogu po zakończeniu!
+                    .setThumbnail(ZIOMECZKI_LOGO_URL) 
                     .setFooter({ text: 'Zakończono' })
                     .setTimestamp();
 
                 if (participants.length === 0) {
-                    endedEmbed.setDescription(`\n> 👑 **Host:** ${message.author}\n> 👥 **Uczestnicy:** \`0\`\n\n❌ **Nikt nie wziął udziału w konkursie!**`);
+                    endedEmbed.setDescription(`\n> 👑 **Host:** ${message.author}\n> 📋 **Wymagania:** ${requirements}\n> 👥 **Uczestnicy:** \`0\`\n\n❌ **Nikt nie wziął udziału w konkursie!**`);
                     await giveawayMsg.edit({ embeds: [endedEmbed], components: [disabledRow] }).catch(() => {});
                     await message.channel.send(`❌ Konkurs o **${prize}** zakończony, ale nikt nie wziął udziału!`);
                 } else {
                     const winnerId = participants[Math.floor(Math.random() * participants.length)];
-                    endedEmbed.setDescription(`\n> 👑 **Host:** ${message.author}\n> 👥 **Uczestnicy:** \`${participants.length}\`\n\n🏆 **ZWYCIĘZCA:** <@${winnerId}>`);
+                    endedEmbed.setDescription(`\n> 👑 **Host:** ${message.author}\n> 📋 **Wymagania:** ${requirements}\n> 👥 **Uczestnicy:** \`${participants.length}\`\n\n🏆 **ZWYCIĘZCA:** <@${winnerId}>`);
                     await giveawayMsg.edit({ embeds: [endedEmbed], components: [disabledRow] }).catch(() => {});
                     await message.channel.send(`🎉 Gratulacje <@${winnerId}>! Wygrałeś/aś: **${prize}**! 🏆 Zgłoś się do hosta po odbiór nagrody.`);
                 }
