@@ -20,17 +20,17 @@ module.exports = (client) => {
 
             // Główny embed panelu (nowoczesny, ciemny design)
             const embed = new EmbedBuilder()
-                .setAuthor({ name: 'ZIOMECZKI.GG • CENTRUM WSPARCIA', iconURL: message.guild.iconURL({ dynamic: true }) || null })
+                .setAuthor({ name: 'SIDE COMMUNITY ZIOMECZKI.GG • CENTRUM WSPARCIA', iconURL: message.guild.iconURL({ dynamic: true }) || null })
                 .setTitle('🎫 Skontaktuj się z Administracją')
                 .setDescription(
-                    `> Witaj w profesjonalnym centrum pomocy!\n\n` +
-                    `Jeśli masz pytanie, znalazłeś błąd, chcesz dołączyć do naszego zespołu lub załatwić inną sprawę, jesteś w idealnym miejscu.\n\n` +
-                    `👇 **Jak to działa?**\n` +
+                    `> Witaj w centrum pomocy!\n\n` +
+                    `> Jeśli masz pytanie, znalazłeś błąd, chcesz dołączyć do naszego zespołu lub załatwić inną sprawę, jesteś w idealnym miejscu.\n\n` +
+                    `> 👇 **Jak to działa?**\n` +
                     `Rozwiń menu poniżej i wybierz kategorię, która najlepiej opisuje Twój problem. Bot automatycznie utworzy dla Ciebie **prywatny kanał**, do którego dostęp będziesz miał tylko Ty i Administracja.`
                 )
                 .setColor('#2b2d31') // Nowoczesny, "niewidzialny" ciemny kolor Discorda
                 .setImage('https://cdn.discordapp.com/attachments/1523090420282949662/1525868085842677800/ziomeckkigg.png?ex=6a6ea824&is=6a6d56a4&hm=491057f9ba1f7aed00ea87db30d80290040d8a370b3ba9ba4c10a87294265b65&')
-                .setFooter({ text: 'Zapewniamy szybką i sprawną pomoc! • Ziomeczki.gg', iconURL: client.user.displayAvatarURL() });
+                .setFooter({ text: 'Zapewniamy szybką i sprawną pomoc! • Side Community Ziomeczki.gg', iconURL: client.user.displayAvatarURL() });
 
             // Menu wyboru (Dropdown)
             const selectMenu = new StringSelectMenuBuilder()
@@ -45,7 +45,7 @@ module.exports = (client) => {
                     },
                     {
                         label: 'Mam Błąd',
-                        description: 'Znalazłeś usterkę lub buga? Zgłoś to tutaj!',
+                        description: 'Znalazłeś błąd lub buga? Zgłoś to tutaj!',
                         value: 'ticket_blad',
                         emoji: '🐛'
                     },
@@ -92,7 +92,7 @@ module.exports = (client) => {
             // Sprawdzanie limitu ticketów (czy gracz nie ma już otwartego w tej kategorii)
             const existingChannel = guild.channels.cache.find(c => c.name === `${categoryName}-${member.user.username.toLowerCase()}`);
             if (existingChannel) {
-                return interaction.editReply({ content: `❌ Posiadasz już otwarty bilet w tej kategorii: ${existingChannel}` });
+                return interaction.editReply({ content: `❌ Posiadasz już otwarty ticket w tej kategorii: ${existingChannel}` });
             }
 
             try {
@@ -111,7 +111,7 @@ module.exports = (client) => {
                 // Embed wewnątrz nowo stworzonego ticketu
                 const ticketEmbed = new EmbedBuilder()
                     .setAuthor({ name: `Kategoria: ${categoryTitle}`, iconURL: member.user.displayAvatarURL({ dynamic: true }) })
-                    .setTitle(`🎫 Witaj w swoim bilecie, ${member.user.username}!`)
+                    .setTitle(`🎫 Witaj w swoim tickecie, ${member.user.username}!`)
                     .setDescription(
                         `> Administracja została powiadomiona i wkrótce się z Tobą skontaktuje.\n\n` +
                         `**Aby przyspieszyć proces, opisz dokładnie swój problem lub sprawę poniżej.** Jeśli posiadasz zrzuty ekranu, śmiało je tutaj wyślij.\n\n` +
@@ -124,7 +124,7 @@ module.exports = (client) => {
                 const ticketRow = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
                         .setCustomId('close_ticket')
-                        .setLabel('Zamknij bilet')
+                        .setLabel('Zamknij ticket')
                         .setStyle(ButtonStyle.Danger)
                         .setEmoji('🔒'),
                     new ButtonBuilder()
@@ -138,11 +138,11 @@ module.exports = (client) => {
                 
                 // Resetujemy menu w głównej wiadomości
                 await interaction.message.edit({ components: [interaction.message.components[0]] });
-                await interaction.editReply({ content: `✅ Twój bilet został pomyślnie utworzony: ${ticketChannel}` });
+                await interaction.editReply({ content: `✅ Twój ticket został pomyślnie utworzony: ${ticketChannel}` });
 
             } catch (error) {
                 console.error(error);
-                await interaction.editReply({ content: '❌ Wystąpił błąd podczas tworzenia kanału. Sprawdź, czy bot ma uprawnienie "Zarządzanie Kanałami".' });
+                await interaction.editReply({ content: '❌ Wystąpił błąd podczas tworzenia kanału. Zgłoś to do Administracji.' });
             }
         }
 
@@ -156,21 +156,21 @@ module.exports = (client) => {
             }
 
             const embed = EmbedBuilder.from(interaction.message.embeds[0]);
-            embed.addFields({ name: '🛠️ Bilet obsługiwany przez:', value: `${interaction.user}`, inline: false });
+            embed.addFields({ name: '🛠️ Ticket obsługiwany przez:', value: `${interaction.user}`, inline: false });
             
             await interaction.update({ embeds: [embed] });
-            await interaction.followUp({ content: `✅ Bilet został przejęty przez ${interaction.user}.` });
+            await interaction.followUp({ content: `✅ Ticket został przejęty przez ${interaction.user}.` });
         }
 
         // Zamykanie ticketu
         if (interaction.customId === 'close_ticket') {
-            await interaction.reply({ content: '🔒 Bilet zostanie bezpowrotnie zamknięty za **5 sekund**...' });
+            await interaction.reply({ content: '🔒 Ticket zostanie bezpowrotnie zamknięty za **5 sekund**...' });
 
             if (LOG_CHANNEL_ID) {
                 const logChannel = interaction.guild.channels.cache.get(LOG_CHANNEL_ID);
                 if (logChannel) {
                     const logEmbed = new EmbedBuilder()
-                        .setTitle('🔒 ZAMKNIĘTO BILET')
+                        .setTitle('🔒 ZAMKNIĘTO TICKETA')
                         .setDescription(`> **Kanał:** #${interaction.channel.name}\n> **Zamknięty przez:** ${interaction.user}`)
                         .setColor('#E74C3C')
                         .setTimestamp();
