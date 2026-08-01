@@ -3,8 +3,8 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('
 // --- KONFIGURACJA ---
 const GIVEAWAY_CHANNEL_ID = '1532418596159095105'; 
 
-// TUTAJ WKLEJ LINK DO TEJ ZARĄBISTEJ GRAFIKI Z MINECRAFTEM (Z PLAŻY):
-const ZIOMECZKI_LOGO_URL = 'TUTAJ_WKLEJ_LINK_DO_ZDJECIA'; 
+// NOWE ZARĄBISTE LOGO ZIOMECZKÓW:
+const ZIOMECZKI_LOGO_URL = 'https://cdn.discordapp.com/attachments/1523090420282949662/1525868085842677800/ziomeczkigg.png?ex=6a6ea824&is=6a6d56a4&hm=491057f9ba1f7aed00ea87db30d80290040d8a370b3ba9ba4c10a87294265b65&'; 
 
 const giveawayParticipants = new Map();
 
@@ -51,7 +51,7 @@ module.exports = (client) => {
             }
 
             if (isNaN(timeMs) || timeMs === 0 || !rawPrizeText) {
-                const errReply = await message.reply(`❌ Błędny format!\nUżyj: \`!konkurs [minuty] [nagroda] | [wymagania]\` LUB \`!konkurs [DD.MM.YYYY] [HH:MM] [nagroda] | [wymagania]\`\nNp: \`!konkurs 01.08.2026 19:00 1B na nowym trybie | Wbicie na Ziomeczki.gg\``);
+                const errReply = await message.reply(`❌ Błędny format!\nUżyj: \`!konkurs [minuty] [nagroda] | [wymagania] / [discord]\` LUB \`!konkurs [DD.MM.YYYY] [HH:MM] [nagroda]\`\nNp: \`!konkurs 01.08.2026 19:00 1B | Zostaw suba / discord.gg/ziomeczki\``);
                 setTimeout(() => errReply.delete().catch(() => {}), 15000);
                 return;
             }
@@ -68,29 +68,42 @@ module.exports = (client) => {
                 return;
             }
 
-            // ODDZIELANIE NAGRODY OD WYMAGAŃ (za pomocą znaku "|")
+            // ODDZIELANIE NAGRODY, WYMAGAŃ (|) I DISCORDA (/)
             let prize = rawPrizeText;
-            let requirements = 'Brak';
+            let requirements = '';
+            let discord = '';
 
             if (rawPrizeText.includes('|')) {
                 const parts = rawPrizeText.split('|');
                 prize = parts[0].trim();
-                requirements = parts.slice(1).join('|').trim(); // W razie gdyby ktoś użył więcej niż jednego znaku "|"
+                let rest = parts.slice(1).join('|').trim(); // W razie użycia więcej niż jednego "|"
+
+                if (rest.includes('/')) {
+                    const subParts = rest.split('/');
+                    requirements = subParts[0].trim();
+                    discord = subParts.slice(1).join('/').trim();
+                } else {
+                    requirements = rest;
+                }
+            } else if (rawPrizeText.includes('/')) {
+                // Jeśli ktoś wpisał tylko ukośnik bez pionowej kreski
+                const parts = rawPrizeText.split('/');
+                prize = parts[0].trim();
+                discord = parts.slice(1).join('/').trim();
             }
 
             const endTime = Math.floor((Date.now() + timeMs) / 1000);
 
+            // DYNAMICZNE BUDOWANIE OPISU (Ukrywa puste wartości)
+            let embedDesc = `\n> ⏳ **Koniec:** <t:${endTime}:R> (<t:${endTime}:t>)\n> 👑 **Host:** ${message.author}\n`;
+            if (requirements) embedDesc += `> 📋 **Wymagania:** ${requirements}\n`;
+            if (discord) embedDesc += `> 🔗 **Discord:** ${discord}\n`;
+            embedDesc += `> 👥 **Uczestnicy:** \`0\`\n\n👇 *Kliknij zielony przycisk poniżej, aby wziąć udział!*`;
+
             const embed = new EmbedBuilder()
                 .setAuthor({ name: '🎊 NOWY KONKURS! 🎊', iconURL: message.guild.iconURL({ dynamic: true }) || null })
                 .setTitle(`🎁 Do wygrania: **${prize}**`)
-                .setDescription(
-                    `\n` +
-                    `> ⏳ **Koniec:** <t:${endTime}:R> (<t:${endTime}:t>)\n` +
-                    `> 👑 **Host:** ${message.author}\n` +
-                    `> 📋 **Wymagania:** ${requirements}\n` +
-                    `> 👥 **Uczestnicy:** \`0\`\n\n` +
-                    `👇 *Kliknij zielony przycisk poniżej, aby wziąć udział!*`
-                )
+                .setDescription(embedDesc)
                 .setColor('#FFD700')
                 .setThumbnail(ZIOMECZKI_LOGO_URL) 
                 .setFooter({ text: 'Powodzenia!', iconURL: client.user.displayAvatarURL() })
@@ -129,13 +142,18 @@ module.exports = (client) => {
                     .setFooter({ text: 'Zakończono' })
                     .setTimestamp();
 
+                // DYNAMICZNE BUDOWANIE OPISU ZAKOŃCZONEGO KONKURSU
+                let endedDesc = `\n> 👑 **Host:** ${message.author}\n`;
+                if (requirements) endedDesc += `> 📋 **Wymagania:** ${requirements}\n`;
+                if (discord) endedDesc += `> 🔗 **Discord:** ${discord}\n`;
+
                 if (participants.length === 0) {
-                    endedEmbed.setDescription(`\n> 👑 **Host:** ${message.author}\n> 📋 **Wymagania:** ${requirements}\n> 👥 **Uczestnicy:** \`0\`\n\n❌ **Nikt nie wziął udziału w konkursie!**`);
+                    endedEmbed.setDescription(endedDesc + `> 👥 **Uczestnicy:** \`0\`\n\n❌ **Nikt nie wziął udziału w konkursie!**`);
                     await giveawayMsg.edit({ embeds: [endedEmbed], components: [disabledRow] }).catch(() => {});
                     await message.channel.send(`❌ Konkurs o **${prize}** zakończony, ale nikt nie wziął udziału!`);
                 } else {
                     const winnerId = participants[Math.floor(Math.random() * participants.length)];
-                    endedEmbed.setDescription(`\n> 👑 **Host:** ${message.author}\n> 📋 **Wymagania:** ${requirements}\n> 👥 **Uczestnicy:** \`${participants.length}\`\n\n🏆 **ZWYCIĘZCA:** <@${winnerId}>`);
+                    endedEmbed.setDescription(endedDesc + `> 👥 **Uczestnicy:** \`${participants.length}\`\n\n🏆 **ZWYCIĘZCA:** <@${winnerId}>`);
                     await giveawayMsg.edit({ embeds: [endedEmbed], components: [disabledRow] }).catch(() => {});
                     await message.channel.send(`🎉 Gratulacje <@${winnerId}>! Wygrałeś/aś: **${prize}**! 🏆 Zgłoś się do hosta po odbiór nagrody.`);
                 }
