@@ -7,7 +7,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers, // Wymagane do działania powitań!
+        GatewayIntentBits.GuildMembers, // Wymagane do działania powitań i AUTOROLI!
         GatewayIntentBits.GuildInvites
     ]
 });
@@ -35,6 +35,7 @@ client.once('ready', () => {
     require('./ostatnia-litera.js')(client);
     require('./invite.js')(client);
     require('./lobby.js')(client);
+    require('./role.js')(client); // <--- DODANO MODUŁ AUTOROLI
 });
 
 // Logowanie za pomocą zmiennej środowiskowej DISCORD_TOKEN
