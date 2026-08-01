@@ -203,22 +203,69 @@ client.on('messageCreate', async message => {
     return;
   }
 
-  // --- KOMENDA KONKURSU (ZAAWANSOWANA) ---
+  // --- KOMENDA KONKURSU Z WSPARCIEM DLA DAT (DD.MM.YYYY HH:MM) ---
   if (message.content.startsWith('!konkurs') && message.channel.id === GIVEAWAY_CHANNEL_ID) {
     const args = message.content.slice(8).trim().split(' ');
-    const minutes = parseInt(args[0]);
-    const prize = args.slice(1).join(' ');
+    
+    let timeMs = 0;
+    let prize = '';
 
-    if (isNaN(minutes) || !prize) {
-      const errReply = await message.reply('❌ Błędny format! Użyj: `!konkurs [minuty] [nagroda]` (np. `!konkurs 5 Klucz do gry`)');
-      setTimeout(() => errReply.delete().catch(() => {}), 5000);
+    const dateRegex = /^(\d{2})\.(\d{2})\.(\d{4})$/;
+    const timeRegex = /^(\d{2}):(\d{2})$/;
+
+    // SPRAWDZENIE CZY PODANO DATĘ W FORMACIE: DD.MM.YYYY HH:MM
+    if (args.length >= 3 && dateRegex.test(args[0]) && timeRegex.test(args[1])) {
+      const dateMatch = args[0].match(dateRegex);
+      const timeMatch = args[1].match(timeRegex);
+
+      const day = dateMatch[1];
+      const month = dateMatch[2];
+      const year = dateMatch[3];
+      const hour = timeMatch[1];
+      const minute = timeMatch[2];
+
+      // Tworzenie daty (+02:00 dla czasu polskiego)
+      const targetDate = new Date(`${year}-${month}-${day}T${hour}:${minute}:00+02:00`);
+
+      if (isNaN(targetDate.getTime())) {
+        return message.reply('❌ Podano nieprawidłową datę!');
+      }
+
+      timeMs = targetDate.getTime() - Date.now();
+      prize = args.slice(2).join(' ');
+    } 
+    // JEŚLI NIE DATA, TO MOŻE MINUTY?
+    else {
+      const minutes = parseInt(args[0]);
+      if (!isNaN(minutes)) {
+        timeMs = minutes * 60 * 1000;
+        prize = args.slice(1).join(' ');
+      }
+    }
+
+    // Walidacja błędów (brak nagrody lub zły format)
+    if (!prize || timeMs === 0) {
+      const errReply = await message.reply('❌ Błędny format!\nUżyj: `!konkurs [minuty] [nagroda]` LUB `!konkurs [DD.MM.YYYY] [HH:MM] [nagroda]`\nNp: `!konkurs 01.08.2026 15:00 Gra XYZ`');
+      setTimeout(() => errReply.delete().catch(() => {}), 10000);
       await message.delete().catch(() => {});
+      return;
+    }
+
+    if (timeMs <= 0) {
+      const errReply = await message.reply('❌ Podana data jest w przeszłości! Zmień na przyszłą datę.');
+      setTimeout(() => errReply.delete().catch(() => {}), 5000);
+      return;
+    }
+
+    if (timeMs > 2147483647) {
+      const errReply = await message.reply('❌ Maksymalny czas trwania konkursu to około 24 dni (ograniczenie systemu).');
+      setTimeout(() => errReply.delete().catch(() => {}), 5000);
       return;
     }
 
     await message.delete().catch(() => {});
 
-    const endTime = Math.floor(Date.now() / 1000) + (minutes * 60);
+    const endTime = Math.floor((Date.now() + timeMs) / 1000);
 
     const embed = new EmbedBuilder()
       .setAuthor({ name: '🎊 NOWY KONKURS! 🎊', iconURL: message.guild.iconURL({ dynamic: true }) || null })
@@ -251,7 +298,6 @@ client.on('messageCreate', async message => {
       const participantsSet = giveawayParticipants.get(giveawayMsg.id);
       const participants = Array.from(participantsSet || []);
 
-      // Wygląd zablokowanego przycisku
       const disabledRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('join_giveaway')
@@ -264,7 +310,7 @@ client.on('messageCreate', async message => {
       const endedEmbed = new EmbedBuilder()
         .setAuthor({ name: '🎊 KONKURS ZAKOŃCZONY 🎊', iconURL: message.guild.iconURL({ dynamic: true }) || null })
         .setTitle(`🎁 Nagroda: **${prize}**`)
-        .setColor('#2B2D31') // Ciemny, wygaszony kolor
+        .setColor('#2B2D31')
         .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
         .setFooter({ text: 'Zakończono' })
         .setTimestamp();
@@ -281,7 +327,7 @@ client.on('messageCreate', async message => {
       }
 
       giveawayParticipants.delete(giveawayMsg.id);
-    }, minutes * 60 * 1000);
+    }, timeMs);
 
     return;
   }
@@ -386,84 +432,41 @@ client.on('interactionCreate', async interaction => {
         .setColor('Yellow')
         .setTimestamp();
 
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('ticket_close').setLabel('Zamknij Ticket').setStyle(ButtonStyle.Danger).setEmoji('🔒')
-      );
+      Ponieważ nie podałeś w poprzedniej wiadomości, w jakim języku lub programie piszesz swój projekt, przygotowałem rozwiązania dla najpopularniejszych technologii. Wybierz to, które pasuje do Twojego kodu.
 
-      const staffPings = STAFF_ROLE_IDS.map(id => `<@&${id}>`).join(' ');
-      await ticketChannel.send({ content: `<@${interaction.user.id}> | ${staffPings}`, embeds: [embed], components: [row] });
-      await interaction.editReply({ content: `✅ Twój ticket został utworzony: <#${ticketChannel.id}>` });
-    } catch (err) {
-      await interaction.editReply({ content: '❌ Wystąpił błąd podczas tworzenia ticketa.' });
-    }
-    return;
-  }
+Oto jak możesz pobrać datę w formacie **DD.MM.YYYY HH:MM** (np. `01.08.2026 15:00`) i poprawnie ją obsłużyć:
 
-  // ZAMYKANIE TICKETA
-  if (interaction.isButton() && interaction.customId === 'ticket_close') {
-    const hasAdminRole = STAFF_ROLE_IDS.some(roleId => interaction.member.roles.cache.has(roleId));
-    if (!hasAdminRole && !interaction.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
-      return interaction.reply({ content: '❌ Tylko administracja może zamknąć ticket.', ephemeral: true });
-    }
+## 1. Rozwiązanie w HTML i JavaScript (Strona WWW)
 
-    await interaction.reply('🔒 Zamykanie ticketa, generowanie logów...');
-    try {
-      const messages = await interaction.channel.messages.fetch({ limit: 100 });
-      const transcriptData = messages.reverse().map(m => {
-        const time = new Date(m.createdTimestamp).toLocaleString('pl-PL');
-        return `[${time}] ${m.author.tag}: ${m.content}`;
-      }).join('\n');
+Możesz użyć zwykłego pola tekstowego z odpowiednim wyrażeniem regularnym, aby wymusić format `DD.MM.YYYY HH:MM`, a następnie zamienić wpisany tekst na rzeczywisty obiekt daty w JavaScript.
 
-      const transcriptBuffer = Buffer.from(transcriptData, 'utf-8');
-      const attachment = new AttachmentBuilder(transcriptBuffer, { name: `${interaction.channel.name}-transcript.txt` });
+```html
+<label for="dateInput">Wpisz datę:</label>
+<input type="text" id="dateInput" placeholder="01.08.2026 15:00">
+<button onclick="parseDate()">Zatwierdź</button>
 
-      const logChannel = await interaction.guild.channels.fetch(TICKET_LOG_CHANNEL_ID).catch(() => null);
-      if (logChannel) {
-        const logEmbed = new EmbedBuilder()
-          .setTitle('🗃️ Zarchiwizowano Ticket')
-          .addFields({ name: 'Zamknięty przez', value: `${interaction.user.tag}` }, { name: 'Kanał', value: interaction.channel.name })
-          .setColor('Red').setTimestamp();
-        await logChannel.send({ embeds: [logEmbed], files: [attachment] });
-      }
-      setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
-    } catch (err) {
-      interaction.editReply('❌ Nie udało się zapisać ticketa.');
-    }
-    return;
-  }
+<script>
+function parseDate() {
+    const input = document.getElementById('dateInput').value;
+    // Sprawdzanie, czy wpisany tekst pasuje do wzoru DD.MM.YYYY HH:MM
+    const regex = /^(\d{2})\.(\d{2})\.(\d{4}) (\d{2}):(\d{2})$/;
+    const match = input.match(regex);
 
-  // --- AKTUALIZACJA UCZESTNIKÓW KONKURSU NA ŻYWO ---
-  if (interaction.isButton() && interaction.customId === 'join_giveaway') {
-    const participants = giveawayParticipants.get(interaction.message.id);
-    if (!participants) {
-      return interaction.reply({ content: '❌ Ten konkurs już się zakończył.', ephemeral: true });
-    }
+    if (match) {
+        // Wyciąganie poszczególnych elementów daty
+        const day = parseInt(match[1], 10);
+        const month = parseInt(match[2], 10) - 1; // Miesiące w JS są liczone od 0
+        const year = parseInt(match[3], 10);
+        const hour = parseInt(match[4], 10);
+        const minute = parseInt(match[5], 10);
 
-    let isAdding = false;
-    if (participants.has(interaction.user.id)) {
-      participants.delete(interaction.user.id);
+        // Tworzenie obiektu daty
+        const userDate = new Date(year, month, day, hour, minute);
+        
+        console.log("Stworzono obiekt daty:", userDate);
+        alert("Pomyślnie wczytano datę: " + userDate.toLocaleString());
     } else {
-      participants.add(interaction.user.id);
-      isAdding = true;
+        alert("Błędny format! Użyj: DD.MM.YYYY HH:MM (np. 01.08.2026 15:00)");
     }
-
-    // Odczytywanie aktualnego Embedu i podmienianie licznika w jego opisie
-    const currentEmbed = interaction.message.embeds[0];
-    const newDesc = currentEmbed.description.replace(/> 👥 \*\*Uczestnicy:\*\* \`\d+\`/, `> 👥 **Uczestnicy:** \`${participants.size}\``);
-    
-    // Tworzenie zaktualizowanego Embedu
-    const updatedEmbed = EmbedBuilder.from(currentEmbed).setDescription(newDesc);
-
-    // Edytowanie samej wiadomości z nowym Embedem
-    await interaction.message.edit({ embeds: [updatedEmbed] }).catch(() => {});
-
-    // Cicha odpowiedź dla użytkownika
-    if (isAdding) {
-      return interaction.reply({ content: '✅ Zostałeś zapisany do konkursu! Powodzenia!', ephemeral: true });
-    } else {
-      return interaction.reply({ content: '⚠️ Wypisałeś się z konkursu.', ephemeral: true });
-    }
-  }
-});
-
-client.login(process.env.DISCORD_TOKEN);
+}
+</script>
