@@ -11,8 +11,7 @@ module.exports = (client) => {
 
         if (message.content.startsWith('!konkurs') && message.channel.id === GIVEAWAY_CHANNEL_ID) {
             
-            // Natychmiastowe usunięcie wiadomości z komendą z czatu
-            await message.delete().catch(() => {});
+            // UWAGA: Usunięto message.delete() - wiadomość z komendą zostaje na czacie, brak bugów wizualnych!
 
             const args = message.content.slice(8).trim().split(/\s+/);
             
@@ -22,6 +21,7 @@ module.exports = (client) => {
             const dateRegex = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/;
             const timeRegex = /^(\d{1,2}):(\d{2})$/;
 
+            // 1. Sprawdzanie czy podano datę DD.MM.YYYY HH:MM
             if (args.length >= 3 && dateRegex.test(args[0]) && timeRegex.test(args[1])) {
                 const dateMatch = args[0].match(dateRegex);
                 const timeMatch = args[1].match(timeRegex);
@@ -39,6 +39,7 @@ module.exports = (client) => {
                 timeMs = targetDate.getTime() - Date.now();
                 prize = args.slice(2).join(' ');
             } 
+            // 2. Sprawdzanie czy podano po prostu minuty
             else if (args.length >= 2 && /^\d+$/.test(args[0])) {
                 const minutes = parseInt(args[0], 10);
                 if (!isNaN(minutes)) {
@@ -47,39 +48,41 @@ module.exports = (client) => {
                 }
             }
 
+            // OBSŁUGA BŁĘDÓW (Bot tylko odpowiada, nie psuje się)
             if (isNaN(timeMs) || timeMs === 0 || !prize) {
-                const errReply = await message.channel.send(`❌ <@${message.author.id}> Błędny format!\nUżyj: \`!konkurs [minuty] [nagroda]\` LUB \`!konkurs [DD.MM.YYYY] [HH:MM] [nagroda]\`\nNp: \`!konkurs 01.08.2026 15:00 Gra XYZ\``);
-                setTimeout(() => errReply.delete().catch(() => {}), 10000);
+                const errReply = await message.reply(`❌ Błędny format!\nUżyj: \`!konkurs [minuty] [nagroda]\` LUB \`!konkurs [DD.MM.YYYY] [HH:MM] [nagroda]\`\nNp: \`!konkurs 01.08.2026 15:00 Gra XYZ\``);
+                setTimeout(() => errReply.delete().catch(() => {}), 15000);
                 return;
             }
 
             if (timeMs <= 0) {
-                const errReply = await message.channel.send(`❌ <@${message.author.id}> Podana data jest w przeszłości! Ustaw przyszłą datę.`);
-                setTimeout(() => errReply.delete().catch(() => {}), 5000);
+                const errReply = await message.reply(`❌ Podana data jest w przeszłości! Ustaw przyszłą datę.`);
+                setTimeout(() => errReply.delete().catch(() => {}), 10000);
                 return;
             }
 
             if (timeMs > 2147483647) {
-                const errReply = await message.channel.send(`❌ <@${message.author.id}> Maksymalny czas trwania to około 24 dni (ograniczenie hostingu bez bazy danych). Podaj bliższą datę.`);
-                setTimeout(() => errReply.delete().catch(() => {}), 7000);
+                const errReply = await message.reply(`❌ Maksymalny czas trwania to około 24 dni (ograniczenie hostingu). Podaj bliższą datę.`);
+                setTimeout(() => errReply.delete().catch(() => {}), 10000);
                 return;
             }
 
+            // OBLICZANIE CZASU
             const endTime = Math.floor((Date.now() + timeMs) / 1000);
 
+            // PIĘKNIUTKI EMBED STARTOWY
             const embed = new EmbedBuilder()
-                .setAuthor({ name: '🎊 NOWY KONKURS! 🎊', iconURL: message.guild.iconURL({ dynamic: true }) || null })
+                .setAuthor({ name: '🎉 WIELKI KONKURS! 🎉', iconURL: message.guild.iconURL({ dynamic: true }) || null })
                 .setTitle(`🎁 Do wygrania: **${prize}**`)
-                .setDescription(
-                    `\n` +
-                    `> ⏳ **Koniec:** <t:${endTime}:R> (<t:${endTime}:t>)\n` +
-                    `> 👑 **Host:** ${message.author}\n` +
-                    `> 👥 **Uczestnicy:** \`0\`\n\n` +
-                    `👇 *Kliknij zielony przycisk poniżej, aby wziąć udział!*`
+                .setDescription('👇 *Kliknij zielony przycisk poniżej, aby spróbować swojego szczęścia!*')
+                .addFields(
+                    { name: '👑 Host', value: `${message.author}`, inline: true },
+                    { name: '⏳ Koniec', value: `<t:${endTime}:R> (<t:${endTime}:t>)`, inline: true },
+                    { name: '👥 Uczestnicy', value: '`0`', inline: true }
                 )
-                .setColor('#FFD700')
+                .setColor('#FF007F') // Nowy, ładny, wibrujący kolor
                 .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
-                .setFooter({ text: 'Powodzenia!', iconURL: client.user.displayAvatarURL() })
+                .setFooter({ text: 'Życzymy powodzenia!', iconURL: client.user.displayAvatarURL() })
                 .setTimestamp(endTime * 1000);
 
             const row = new ActionRowBuilder().addComponents(
@@ -92,8 +95,10 @@ module.exports = (client) => {
 
             const giveawayMsg = await message.channel.send({ embeds: [embed], components: [row] });
             
+            // ZAPIS DO PAMIĘCI
             giveawayParticipants.set(giveawayMsg.id, new Set());
 
+            // LOGIKA ZAKOŃCZENIA KONKURSU
             setTimeout(async () => {
                 const participantsSet = giveawayParticipants.get(giveawayMsg.id);
                 const participants = Array.from(participantsSet || []);
@@ -110,20 +115,28 @@ module.exports = (client) => {
                 const endedEmbed = new EmbedBuilder()
                     .setAuthor({ name: '🎊 KONKURS ZAKOŃCZONY 🎊', iconURL: message.guild.iconURL({ dynamic: true }) || null })
                     .setTitle(`🎁 Nagroda: **${prize}**`)
-                    .setColor('#2B2D31')
+                    .setColor('#2B2D31') // Ciemnoszary po zakończeniu
                     .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
                     .setFooter({ text: 'Zakończono' })
                     .setTimestamp();
 
                 if (participants.length === 0) {
-                    endedEmbed.setDescription(`\n> 👑 **Host:** ${message.author}\n> 👥 **Uczestnicy:** \`0\`\n\n❌ **Nikt nie wziął udziału w konkursie!**`);
+                    endedEmbed.addFields(
+                        { name: '👑 Host', value: `${message.author}`, inline: true },
+                        { name: '👥 Uczestnicy', value: '`0`', inline: true },
+                        { name: '🏆 Wynik', value: '❌ Nikt nie wziął udziału', inline: false }
+                    );
                     await giveawayMsg.edit({ embeds: [endedEmbed], components: [disabledRow] }).catch(() => {});
                     await message.channel.send(`❌ Konkurs o **${prize}** zakończony, ale nikt nie wziął udziału!`);
                 } else {
                     const winnerId = participants[Math.floor(Math.random() * participants.length)];
-                    endedEmbed.setDescription(`\n> 👑 **Host:** ${message.author}\n> 👥 **Uczestnicy:** \`${participants.length}\`\n\n🏆 **ZWYCIĘZCA:** <@${winnerId}>`);
+                    endedEmbed.addFields(
+                        { name: '👑 Host', value: `${message.author}`, inline: true },
+                        { name: '👥 Uczestnicy', value: `\`${participants.length}\``, inline: true },
+                        { name: '🏆 Zwycięzca', value: `🎉 <@${winnerId}> 🎉`, inline: false }
+                    );
                     await giveawayMsg.edit({ embeds: [endedEmbed], components: [disabledRow] }).catch(() => {});
-                    await message.channel.send(`🎉 Gratulacje <@${winnerId}>! Wygrałeś/aś: **${prize}**! 🏆 Zgłoś się do hosta po odbiór nagrody.`);
+                    await message.channel.send(`🎉 Gratulacje <@${winnerId}>! Wygrałeś/aś: **${prize}**! 🏆\nZgłoś się do ${message.author} po odbiór nagrody.`);
                 }
 
                 giveawayParticipants.delete(giveawayMsg.id);
@@ -139,27 +152,34 @@ module.exports = (client) => {
             const giveawayMsgId = interaction.message.id;
             
             if (!giveawayParticipants.has(giveawayMsgId)) {
-                return interaction.reply({ content: 'Ten konkurs już się zakończył lub nastąpił restart bota!', ephemeral: true });
+                return interaction.reply({ content: '❌ Ten konkurs już się zakończył lub bot został zrestartowany!', ephemeral: true });
             }
 
             const participantsSet = giveawayParticipants.get(giveawayMsgId);
+            const originalEmbed = EmbedBuilder.from(interaction.message.embeds[0]);
 
             if (participantsSet.has(interaction.user.id)) {
+                // Jeśli gracz już był -> Odejmujemy go
                 participantsSet.delete(interaction.user.id);
                 
-                const originalEmbed = EmbedBuilder.from(interaction.message.embeds[0]);
-                originalEmbed.setDescription(originalEmbed.data.description.replace(/👥 \*\*Uczestnicy:\*\* \`\d+\`/, `👥 **Uczestnicy:** \`${participantsSet.size}\``));
+                // Aktualizujemy pole z uczestnikami
+                originalEmbed.data.fields.forEach(field => {
+                    if(field.name === '👥 Uczestnicy') field.value = `\`${participantsSet.size}\``;
+                });
+                
                 await interaction.message.edit({ embeds: [originalEmbed] });
-
-                return interaction.reply({ content: 'Wyszedłeś/aś z konkursu!', ephemeral: true });
+                return interaction.reply({ content: '🚪 Zrezygnowałeś z udziału w konkursie!', ephemeral: true });
             } else {
+                // Jeśli gracz nowy -> Dodajemy go
                 participantsSet.add(interaction.user.id);
                 
-                const originalEmbed = EmbedBuilder.from(interaction.message.embeds[0]);
-                originalEmbed.setDescription(originalEmbed.data.description.replace(/👥 \*\*Uczestnicy:\*\* \`\d+\`/, `👥 **Uczestnicy:** \`${participantsSet.size}\``));
+                // Aktualizujemy pole z uczestnikami
+                originalEmbed.data.fields.forEach(field => {
+                    if(field.name === '👥 Uczestnicy') field.value = `\`${participantsSet.size}\``;
+                });
+                
                 await interaction.message.edit({ embeds: [originalEmbed] });
-
-                return interaction.reply({ content: 'Dołączyłeś/aś do konkursu! 🎉', ephemeral: true });
+                return interaction.reply({ content: '🎉 Dołączyłeś/aś do konkursu! Trzymamy kciuki!', ephemeral: true });
             }
         }
     });
