@@ -14,10 +14,10 @@ module.exports = (client) => {
             await message.delete().catch(() => {});
 
             const embed = new EmbedBuilder()
-                .setAuthor({ name: 'ZIOMECZKI.GG • SYSTEM OCHRONY', iconURL: message.guild.iconURL({ dynamic: true }) || null })
+                .setAuthor({ name: 'SIDE COMMUNITY ZIOMECZKI.GG • SYSTEM OCHRONY', iconURL: message.guild.iconURL({ dynamic: true }) || null })
                 .setTitle('🛡️ Weryfikacja Użytkowników')
                 .setDescription(
-                    `> Witaj na oficjalnym serwerze **Ziomeczki.gg**!\n\n` +
+                    `> Witaj na serwerze ** Side Community Ziomeczki.gg**!\n\n` +
                     `Aby uzyskać pełny dostęp do kanałów, musisz przejść szybką i prostą weryfikację anty-botową.\n\n` +
                     `✨ *Kliknij przycisk poniżej, aby otworzyć formularz weryfikacyjny.*`
                 )
