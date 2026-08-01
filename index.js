@@ -12,10 +12,10 @@ const client = new Client({
     ]
 });
 
-// --- PROSTY SERWER WWW DLA HOSTINGU (Zapewnia, że bot jest cały czas aktywny 24/7) ---
+// --- PROSTY SERWER WWW DLA HOSTINGU ---
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Bot Ziomeczki.gg dziala 24/7 i jest aktywny!\n');
+    res.end('Bot Side Community Ziomeczki.gg dziala 24/7 i jest aktywny!\n');
 });
 
 server.listen(3000, () => {
@@ -28,9 +28,9 @@ client.once('ready', () => {
     
     // Ładowanie wszystkich systemów bota
     require('./konkurs.js')(client);
-    require('./report.js')(client); // <--- ZAKTUALIZOWANY MODUŁ ZGŁOSZEŃ
-    require('./weryfikacja.js')(client);
-    require('./tickety.js')(client);
+    require('./report.js')(client); 
+    require('./weryfikacja.js')(client); 
+    require('./tickety.js')(client); 
     require('./liczenie.js')(client);
     require('./ostatnia-litera.js')(client);
     require('./invite.js')(client);
@@ -39,5 +39,4 @@ client.once('ready', () => {
     require('./info.js')(client); 
 });
 
-// Logowanie za pomocą zmiennej środowiskowej DISCORD_TOKEN
 client.login(process.env.DISCORD_TOKEN);
