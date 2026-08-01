@@ -10,6 +10,10 @@ module.exports = (client) => {
         if (message.author.bot) return;
 
         if (message.content.startsWith('!konkurs') && message.channel.id === GIVEAWAY_CHANNEL_ID) {
+            
+            // Natychmiastowe usunięcie wiadomości z komendą z czatu
+            await message.delete().catch(() => {});
+
             const args = message.content.slice(8).trim().split(/\s+/);
             
             let timeMs = 0;
@@ -44,27 +48,22 @@ module.exports = (client) => {
             }
 
             if (isNaN(timeMs) || timeMs === 0 || !prize) {
-                const errReply = await message.reply('❌ Błędny format!\nUżyj: `!konkurs [minuty] [nagroda]` LUB `!konkurs [DD.MM.YYYY] [HH:MM] [nagroda]`\nNp: `!konkurs 01.08.2026 15:00 Gra XYZ`');
+                const errReply = await message.channel.send(`❌ <@${message.author.id}> Błędny format!\nUżyj: \`!konkurs [minuty] [nagroda]\` LUB \`!konkurs [DD.MM.YYYY] [HH:MM] [nagroda]\`\nNp: \`!konkurs 01.08.2026 15:00 Gra XYZ\``);
                 setTimeout(() => errReply.delete().catch(() => {}), 10000);
-                await message.delete().catch(() => {});
                 return;
             }
 
             if (timeMs <= 0) {
-                const errReply = await message.reply('❌ Podana data jest w przeszłości! Ustaw przyszłą datę.');
+                const errReply = await message.channel.send(`❌ <@${message.author.id}> Podana data jest w przeszłości! Ustaw przyszłą datę.`);
                 setTimeout(() => errReply.delete().catch(() => {}), 5000);
-                await message.delete().catch(() => {});
                 return;
             }
 
             if (timeMs > 2147483647) {
-                const errReply = await message.reply('❌ Maksymalny czas trwania to około 24 dni (ograniczenie hostingu bez bazy danych). Podaj bliższą datę.');
+                const errReply = await message.channel.send(`❌ <@${message.author.id}> Maksymalny czas trwania to około 24 dni (ograniczenie hostingu bez bazy danych). Podaj bliższą datę.`);
                 setTimeout(() => errReply.delete().catch(() => {}), 7000);
-                await message.delete().catch(() => {});
                 return;
             }
-
-            await message.delete().catch(() => {});
 
             const endTime = Math.floor((Date.now() + timeMs) / 1000);
 
