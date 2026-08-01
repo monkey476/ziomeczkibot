@@ -2,9 +2,7 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('
 
 // --- KONFIGURACJA ---
 const GIVEAWAY_CHANNEL_ID = '1532418596159095105'; 
-
-// NOWE ZARĄBISTE LOGO ZIOMECZKÓW:
-const ZIOMECZKI_LOGO_URL = 'https://cdn.discordapp.com/attachments/1523090420282949662/1525868085842677800/ziomeczkigg.png?ex=6a6ea824&is=6a6d56a4&hm=491057f9ba1f7aed00ea87db30d80290040d8a370b3ba9ba4c10a87294265b65&'; 
+const ZIOMECZKI_LOGO_URL = 'https://cdn.discordapp.com/attachments/1523090420282949662/1525868085842677800/ziomeckkigg.png?ex=6a6ea824&is=6a6d56a4&hm=491057f9ba1f7aed00ea87db30d80290040d8a370b3ba9ba4c10a87294265b65&'; 
 
 const giveawayParticipants = new Map();
 
@@ -23,7 +21,6 @@ module.exports = (client) => {
             const dateRegex = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/;
             const timeRegex = /^(\d{1,2}):(\d{2})$/;
 
-            // Sprawdzanie czy podano datę DD.MM.YYYY HH:MM
             if (args.length >= 3 && dateRegex.test(args[0]) && timeRegex.test(args[1])) {
                 const dateMatch = args[0].match(dateRegex);
                 const timeMatch = args[1].match(timeRegex);
@@ -41,7 +38,6 @@ module.exports = (client) => {
                 timeMs = targetDate.getTime() - Date.now();
                 rawPrizeText = args.slice(2).join(' ');
             } 
-            // Sprawdzanie czy podano po prostu minuty
             else if (args.length >= 2 && /^\d+$/.test(args[0])) {
                 const minutes = parseInt(args[0], 10);
                 if (!isNaN(minutes)) {
@@ -68,7 +64,6 @@ module.exports = (client) => {
                 return;
             }
 
-            // ODDZIELANIE NAGRODY, WYMAGAŃ (|) I DISCORDA (/)
             let prize = rawPrizeText;
             let requirements = '';
             let discord = '';
@@ -76,7 +71,7 @@ module.exports = (client) => {
             if (rawPrizeText.includes('|')) {
                 const parts = rawPrizeText.split('|');
                 prize = parts[0].trim();
-                let rest = parts.slice(1).join('|').trim(); // W razie użycia więcej niż jednego "|"
+                let rest = parts.slice(1).join('|').trim();
 
                 if (rest.includes('/')) {
                     const subParts = rest.split('/');
@@ -86,7 +81,6 @@ module.exports = (client) => {
                     requirements = rest;
                 }
             } else if (rawPrizeText.includes('/')) {
-                // Jeśli ktoś wpisał tylko ukośnik bez pionowej kreski
                 const parts = rawPrizeText.split('/');
                 prize = parts[0].trim();
                 discord = parts.slice(1).join('/').trim();
@@ -94,7 +88,6 @@ module.exports = (client) => {
 
             const endTime = Math.floor((Date.now() + timeMs) / 1000);
 
-            // DYNAMICZNE BUDOWANIE OPISU (Ukrywa puste wartości)
             let embedDesc = `\n> ⏳ **Koniec:** <t:${endTime}:R> (<t:${endTime}:t>)\n> 👑 **Host:** ${message.author}\n`;
             if (requirements) embedDesc += `> 📋 **Wymagania:** ${requirements}\n`;
             if (discord) embedDesc += `> 🔗 **Discord:** ${discord}\n`;
@@ -142,7 +135,6 @@ module.exports = (client) => {
                     .setFooter({ text: 'Zakończono' })
                     .setTimestamp();
 
-                // DYNAMICZNE BUDOWANIE OPISU ZAKOŃCZONEGO KONKURSU
                 let endedDesc = `\n> 👑 **Host:** ${message.author}\n`;
                 if (requirements) endedDesc += `> 📋 **Wymagania:** ${requirements}\n`;
                 if (discord) endedDesc += `> 🔗 **Discord:** ${discord}\n`;
@@ -163,7 +155,7 @@ module.exports = (client) => {
         }
     });
 
-    // 2. Obsługa przycisków
+    // 2. Obsługa przycisków (naprawiona, bez błędu "Ta aplikacja nie odpowiedziała na czas")
     client.on('interactionCreate', async (interaction) => {
         if (!interaction.isButton()) return;
 
@@ -171,28 +163,30 @@ module.exports = (client) => {
             const giveawayMsgId = interaction.message.id;
             
             if (!giveawayParticipants.has(giveawayMsgId)) {
-                return interaction.reply({ content: 'Ten konkurs już się zakończył lub nastąpił restart bota!', ephemeral: true });
+                return interaction.reply({ content: '❌ Ten konkurs już się zakończył lub nastąpił restart bota!', ephemeral: true });
             }
 
             const participantsSet = giveawayParticipants.get(giveawayMsgId);
+            const userId = interaction.user.id;
+            let responseText = '';
 
-            if (participantsSet.has(interaction.user.id)) {
-                participantsSet.delete(interaction.user.id);
-                
-                const originalEmbed = EmbedBuilder.from(interaction.message.embeds[0]);
-                originalEmbed.setDescription(originalEmbed.data.description.replace(/> 👥 \*\*Uczestnicy:\*\* \`\d+\`/, `> 👥 **Uczestnicy:** \`${participantsSet.size}\``));
-                await interaction.message.edit({ embeds: [originalEmbed] });
-
-                return interaction.reply({ content: 'Wyszedłeś/aś z konkursu!', ephemeral: true });
+            if (participantsSet.has(userId)) {
+                participantsSet.delete(userId);
+                responseText = '🚪 Zrezygnowałeś z udziału w konkursie!';
             } else {
-                participantsSet.add(interaction.user.id);
-                
-                const originalEmbed = EmbedBuilder.from(interaction.message.embeds[0]);
-                originalEmbed.setDescription(originalEmbed.data.description.replace(/> 👥 \*\*Uczestnicy:\*\* \`\d+\`/, `> 👥 **Uczestnicy:** \`${participantsSet.size}\``));
-                await interaction.message.edit({ embeds: [originalEmbed] });
-
-                return interaction.reply({ content: 'Dołączyłeś/aś do konkursu! 🎉', ephemeral: true });
+                participantsSet.add(userId);
+                responseText = '🎉 Dołączyłeś/aś do konkursu! Trzymamy kciuki!';
             }
+
+            // Aktualizujemy embed z nową liczbą uczestników
+            const originalEmbed = EmbedBuilder.from(interaction.message.embeds[0]);
+            originalEmbed.setDescription(originalEmbed.data.description.replace(/> 👥 \*\*Uczestnicy:\*\* \`\d+\`/, `> 👥 **Uczestnicy:** \`${participantsSet.size}\``));
+
+            // Zamiast zwykłej edycji, używamy interaction.update, co natychmiastowo potwierdza kliknięcie dla Discorda
+            await interaction.update({ embeds: [originalEmbed] }).catch(() => {});
+
+            // Wysyłamy ukryte powiadomienie do gracza (ephemeral)
+            await interaction.followUp({ content: responseText, ephemeral: true }).catch(() => {});
         }
     });
 };
