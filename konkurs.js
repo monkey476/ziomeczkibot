@@ -4,7 +4,7 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('
 const GIVEAWAY_CHANNEL_ID = '1532418596159095105'; 
 
 // TUTAJ WKLEJ LINK DO TEJ ZARĄBISTEJ GRAFIKI Z MINECRAFTEM (Z PLAŻY):
-const ZIOMECZKI_LOGO_URL = 'https://cdn.discordapp.com/attachments/1523090420282949662/1525868085842677800/ziomeczkigg.png?ex=6a6ea824&is=6a6d56a4&hm=491057f9ba1f7aed00ea87db30d80290040d8a370b3ba9ba4c10a87294265b65&'; 
+const ZIOMECZKI_LOGO_URL = 'TUTAJ_WKLEJ_LINK_DO_ZDJECIA'; 
 
 const giveawayParticipants = new Map();
 
