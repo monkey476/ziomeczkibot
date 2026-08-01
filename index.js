@@ -1,13 +1,13 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 const http = require('http');
 
-// Tworzenie instancji bota ze wszystkimi potrzebnymi uprawnieniami (w tym uprawnieniami do pobierania detali użytkowników)
+// Tworzenie instancji bota ze wszystkimi potrzebnymi uprawnieniami
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers, // Wymagane do działania powitań, autoroli i dokładnego info o graczu!
+        GatewayIntentBits.GuildMembers, 
         GatewayIntentBits.GuildInvites
     ]
 });
@@ -28,7 +28,7 @@ client.once('ready', () => {
     
     // Ładowanie wszystkich systemów bota
     require('./konkurs.js')(client);
-    require('./report.js')(client);
+    require('./report.js')(client); // <--- ZAKTUALIZOWANY MODUŁ ZGŁOSZEŃ
     require('./weryfikacja.js')(client);
     require('./tickety.js')(client);
     require('./liczenie.js')(client);
@@ -36,7 +36,7 @@ client.once('ready', () => {
     require('./invite.js')(client);
     require('./lobby.js')(client);
     require('./role.js')(client);
-    require('./info.js')(client); // <--- DODANO MODUŁ INFORMACJI O GRACZU
+    require('./info.js')(client); 
 });
 
 // Logowanie za pomocą zmiennej środowiskowej DISCORD_TOKEN
