@@ -59,6 +59,12 @@ module.exports = (client) => {
                                 .setLabel('Konkurs zakończony')
                                 .setStyle(ButtonStyle.Secondary)
                                 .setEmoji('🔒')
+                                .setDisabled(true),
+                            new ButtonBuilder()
+                                .setCustomId('list_participants')
+                                .setLabel('Uczestnicy')
+                                .setStyle(ButtonStyle.Secondary)
+                                .setEmoji('📋')
                                 .setDisabled(true)
                         );
 
@@ -75,6 +81,65 @@ module.exports = (client) => {
 
     client.on('messageCreate', async (message) => {
         if (message.author.bot || !message.guild) return;
+
+        // Komenda do naprawiania zepsutego konkursu po restarcie
+        if (message.content.startsWith('!naprawkonkurs')) {
+            if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                return message.reply({ content: '❌ Nie masz uprawnień Administratora!', ephemeral: true });
+            }
+
+            const reference = message.reference;
+            if (!reference) {
+                return message.reply({ content: '❌ Musisz odpowiedzieć (`reply`) komendą `!naprawkonkurs` na wiadomość z zepsutym konkursem!', ephemeral: true });
+            }
+
+            try {
+                const targetChannel = await client.channels.fetch(reference.channelId);
+                const targetMessage = await targetChannel.messages.fetch(reference.messageId);
+
+                if (!targetMessage || targetMessage.embeds.length === 0) {
+                    return message.reply({ content: '❌ Nie znaleziono poprawnej wiadomości konkursowej.', ephemeral: true });
+                }
+
+                // Odświeżamy przyciski z powrotem do działania
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('join_giveaway')
+                        .setLabel('Weź udział')
+                        .setStyle(ButtonStyle.Success)
+                        .setEmoji('🎉'),
+                    new ButtonBuilder()
+                        .setCustomId('list_participants')
+                        .setLabel('Lista uczestników')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setEmoji('📋')
+                );
+
+                await targetMessage.edit({ components: [row] });
+
+                const db = loadData();
+                if (!db.giveaways[targetMessage.id]) {
+                    // Jeśli baza nie miała zapisu, odtwarzamy go z domyślnym czasem 24h lub odczytujemy z embeda
+                    db.giveaways[targetMessage.id] = {
+                        channelId: targetChannel.id,
+                        endTime: Date.now() + (24 * 60 * 60 * 1000), // domyślnie na dobę w razie awarii
+                        participants: [],
+                        ended: false
+                    };
+                    saveData(db);
+                } else {
+                    db.giveaways[targetMessage.id].ended = false;
+                    saveData(db);
+                }
+
+                await message.reply({ content: '✅ **Pomyślnie naprawiono i zresetowano konkurs!** Przyciski znów działają.', ephemeral: true });
+                await message.delete().catch(() => {});
+            } catch (err) {
+                console.error(err);
+                return message.reply({ content: '❌ Wystąpił błąd podczas naprawiania konkursu.', ephemeral: true });
+            }
+            return;
+        }
 
         if (message.content.startsWith('!konkurs')) {
             if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
@@ -108,7 +173,7 @@ module.exports = (client) => {
 
             const timestampUnix = Math.floor(endTimeMs / 1000);
 
-            // Układ z rozdzielonymi ikonami/nagłówkami i wartościami w nowych linijkach
+            // Dokładny układ z wartościami w nowych linijkach
             const embed = new EmbedBuilder()
                 .setAuthor({ name: 'SIDE COMMUNITY ZIOMECZKI.GG • KONKURSY', iconURL: message.guild.iconURL({ dynamic: true }) || null })
                 .setTitle('🎉 NOWY KONKURS! 🎉')
@@ -124,12 +189,18 @@ module.exports = (client) => {
                 .setImage('https://cdn.discordapp.com/attachments/1523090420282949662/1525868085842677800/ziomeckkigg.png?ex=6a6ea824&is=6a6d56a4&hm=491057f9ba1f7aed00ea87db30d80290040d8a370b3ba9ba4c10a87294265b65&')
                 .setFooter({ text: `Powodzenia! • Dziś o ${timeStr}`, iconURL: client.user.displayAvatarURL() });
 
+            // Dwa przyciski: Dołączania oraz Administracyjny (Lista uczestników)
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId('join_giveaway')
                     .setLabel('Weź udział')
                     .setStyle(ButtonStyle.Success)
-                    .setEmoji('🎉')
+                    .setEmoji('🎉'),
+                new ButtonBuilder()
+                    .setCustomId('list_participants')
+                    .setLabel('Lista uczestników')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setEmoji('📋')
             );
 
             const sentMessage = await message.channel.send({ embeds: [embed], components: [row] });
@@ -146,13 +217,29 @@ module.exports = (client) => {
     });
 
     client.on('interactionCreate', async (interaction) => {
-        if (!interaction.isButton() || interaction.customId !== 'join_giveaway') return;
+        if (!interaction.isButton()) return;
 
         const db = loadData();
         const gData = db.giveaways[interaction.message.id];
 
+        // Obsługa przycisku listy uczestników dla administracji
+        if (interaction.customId === 'list_participants') {
+            if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                return interaction.reply({ content: '❌ Ten przycisk jest dostępny tylko dla Administratorów!', ephemeral: true });
+            }
+
+            if (!gData || !gData.participants || gData.participants.length === 0) {
+                return interaction.reply({ content: '📋 Brak uczestników w tym konkursie.', ephemeral: true });
+            }
+
+            const participantsList = gData.participants.map(id => `<@${id}>`).join(', ');
+            return interaction.reply({ content: `📋 **Lista uczestników (${gData.participants.length}):**\n${participantsList}`, ephemeral: true });
+        }
+
+        if (interaction.customId !== 'join_giveaway') return;
+
         if (!gData) {
-            return interaction.reply({ content: '❌ Nie znaleziono danych tego konkursu w bazie (prawdopodobnie bot był restartowany przed jego utworzeniem). Stwórz nowy konkurs.', ephemeral: true });
+            return interaction.reply({ content: '❌ Konkurs nie został znaleziony w bazie. Jeśli bot był restartowany, użyj komendy `!naprawkonkurs` w odpowiedzi na tę wiadomość.', ephemeral: true });
         }
 
         if (gData.ended || Date.now() >= gData.endTime) {
