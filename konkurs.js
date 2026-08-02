@@ -26,7 +26,6 @@ module.exports = (client) => {
     client.once('ready', () => {
         console.log('[Side Community Ziomeczki.gg] Moduł konkursów został pomyślnie uruchomiony!');
         
-        // Pętla sprawdzająca zakończenie konkursów
         setInterval(async () => {
             const db = loadData();
             const now = Date.now();
@@ -92,19 +91,20 @@ module.exports = (client) => {
             }
 
             const leftSide = parts[0].trim().split(' ');
-            const dateStr = leftSide[0]; // np. 01.08.2026
-            const timeStr = leftSide[1]; // np. 20:00
-            const prize = leftSide.slice(2).join(' ');
+            const dateStr = leftSide[0]; 
+            const timeStr = leftSide[1]; 
+            const prize = leftSide.slice(2).join(' '); // Nagroda zachowuje emoji bez backticków
 
-            const rightSide = parts[1].split('/');
+            const rightPart = parts.slice(1).join('|'); // Łączymy z powrotem resztę po pierwszym "|"
+            const rightSide = rightPart.split('/');
             const requirements = rightSide[0] ? rightSide[0].trim() : 'Brak wymagań';
-            const inviteLink = rightSide[1] ? rightSide[1].trim() : '';
+            
+            // Poprawione wyciąganie całego linku URL (nawet z https:// zawierającym slashe)
+            const inviteLink = rightSide.slice(1).join('/').trim();
 
-            // Prawidłowe parsowanie daty DD.MM.YYYY HH:MM
             const [day, month, year] = dateStr.split('.').map(Number);
             const [hour, minute] = timeStr.split(':').map(Number);
             
-            // Tworzymy datę (miesiące w JS są od 0 do 11)
             const endDate = new Date(year, month - 1, day, hour, minute, 0);
             const endTimeMs = endDate.getTime();
 
@@ -113,7 +113,7 @@ module.exports = (client) => {
             const embed = new EmbedBuilder()
                 .setAuthor({ name: 'SIDE COMMUNITY ZIOMECZKI.GG • KONKURSY', iconURL: message.guild.iconURL({ dynamic: true }) || null })
                 .setTitle('🎉 NOWY KONKURS! 🎉')
-                .setDescription(`🎁 **Do wygrania:** \`${prize}\` 🎁`)
+                .setDescription(`🎁 **Do wygrania:** ${prize} 🎁`) // Usunięto backticki, żeby emoji działało poprawnie
                 .setColor('#F1C40F')
                 .addFields(
                     { name: '⏳ Koniec', value: `> <t:${timestampUnix}:R> (${timeStr})`, inline: false },
