@@ -87,7 +87,7 @@ module.exports = (client) => {
 
             const existingChannel = guild.channels.cache.find(c => c.name === `${categoryName}-${member.user.username.toLowerCase()}`);
             if (existingChannel) {
-                return interaction.editReply({ content: `❌ Posiadasz już otwarty bilet w tej kategorii: ${existingChannel}` });
+                return interaction.editReply({ content: `❌ Posiadasz już otwarty ticket w tej kategorii: ${existingChannel}` });
             }
 
             try {
@@ -104,7 +104,7 @@ module.exports = (client) => {
 
                 const ticketEmbed = new EmbedBuilder()
                     .setAuthor({ name: `Kategoria: ${categoryTitle}`, iconURL: member.user.displayAvatarURL({ dynamic: true }) })
-                    .setTitle(`🎫 Witaj w swoim bilecie, ${member.user.username}!`)
+                    .setTitle(`🎫 Witaj w swoim tickecie, ${member.user.username}!`)
                     .setDescription(
                         `> Administracja została powiadomiona i wkrótce się z Tobą skontaktuje.\n\n` +
                         `**Aby przyspieszyć proces, opisz dokładnie swój problem lub sprawę poniżej.** Jeśli posiadasz zrzuty ekranu, śmiało je tutaj wyślij.\n\n` +
@@ -126,14 +126,14 @@ module.exports = (client) => {
                         .setEmoji('🙋‍♂️')
                 );
 
-                await ticketChannel.send({ content: `${member} | @here`, embeds: [ticketEmbed], components: [ticketRow] });
+                await ticketChannel.send({ content: `${member} | @ticket`, embeds: [ticketEmbed], components: [ticketRow] });
                 
                 await interaction.message.edit({ components: [interaction.message.components[0]] }).catch(() => {});
-                await interaction.editReply({ content: `✅ Twój bilet został pomyślnie utworzony: ${ticketChannel}` });
+                await interaction.editReply({ content: `✅ Twój ticket został pomyślnie utworzony: ${ticketChannel}` });
 
             } catch (error) {
                 console.error('Błąd podczas tworzenia ticketu:', error);
-                await interaction.editReply({ content: '❌ Wystąpił błąd podczas tworzenia kanału. Sprawdź, czy bot ma uprawnienie "Zarządzanie Kanałami".' });
+                await interaction.editReply({ content: '❌ Wystąpił błąd podczas tworzenia kanału. Skontaktuj się z Administracją.' });
             }
         }
 
@@ -142,18 +142,18 @@ module.exports = (client) => {
 
         if (interaction.customId === 'claim_ticket') {
             if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
-                return interaction.reply({ content: '❌ Tylko administracja może przejmować bilety!', ephemeral: true });
+                return interaction.reply({ content: '❌ Tylko administracja może przejmować tickety!', ephemeral: true });
             }
 
             const embed = EmbedBuilder.from(interaction.message.embeds[0]);
-            embed.addFields({ name: '🛠️ Bilet obsługiwany przez:', value: `${interaction.user}`, inline: false });
+            embed.addFields({ name: '🛠️ Ticket obsługiwany przez:', value: `${interaction.user}`, inline: false });
             
             await interaction.update({ embeds: [embed] });
-            await interaction.followUp({ content: `✅ Bilet został przejęty przez ${interaction.user}.` });
+            await interaction.followUp({ content: `✅ Ticket został przejęty przez ${interaction.user}.` });
         }
 
         if (interaction.customId === 'close_ticket') {
-            await interaction.reply({ content: '🔒 Bilet zostanie bezpowrotnie zamknięty za **5 sekund**...' });
+            await interaction.reply({ content: '🔒 Ticket zostanie bezpowrotnie zamknięty za **5 sekund**...' });
 
             // Wysyłanie logu na wskazany kanał
             if (LOG_CHANNEL_ID) {
@@ -161,7 +161,7 @@ module.exports = (client) => {
                 if (logChannel) {
                     const logEmbed = new EmbedBuilder()
                         .setAuthor({ name: 'SIDE COMMUNITY ZIOMECZKI.GG • LOGI TICKETÓW', iconURL: interaction.guild.iconURL({ dynamic: true }) || null })
-                        .setTitle('🔒 Zamknięto bilet')
+                        .setTitle('🔒 Zamknięto ticket')
                         .setDescription(`> Poniżej znajdują się szczegóły zamkniętego zgłoszenia.`)
                         .addFields(
                             { name: '📂 Nazwa kanału', value: `\`#${interaction.channel.name}\``, inline: true },
