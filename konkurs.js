@@ -48,10 +48,15 @@ module.exports = (client) => {
                         }
 
                         const oldEmbed = message.embeds[0];
+                        
+                        // Zastępujemy dolny tekst o przycisku informacją o zwycięzcy
+                        let newDesc = oldEmbed.description;
+                        newDesc = newDesc.replace('👇 *Kliknij zielony przycisk poniżej, aby wziąć udział!*', `🏆 **Wynik:** ${winnerText}`);
+
                         const endedEmbed = EmbedBuilder.from(oldEmbed)
                             .setTitle('🎉 KONKURS ROZSTRZYGNIĘTY! 🎉')
                             .setColor('#E74C3C')
-                            .addFields({ name: '🏆 Wynik', value: `> **${winnerText}**`, inline: false });
+                            .setDescription(newDesc);
 
                         const disabledRow = new ActionRowBuilder().addComponents(
                             new ButtonBuilder()
@@ -82,7 +87,7 @@ module.exports = (client) => {
     client.on('messageCreate', async (message) => {
         if (message.author.bot || !message.guild) return;
 
-        // Komenda do naprawiania zepsutego konkursu po restarcie
+        // Komenda do naprawy po restarcie
         if (message.content.startsWith('!naprawkonkurs')) {
             if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
                 return message.reply({ content: '❌ Nie masz uprawnień Administratora!', ephemeral: true });
@@ -90,18 +95,13 @@ module.exports = (client) => {
 
             const reference = message.reference;
             if (!reference) {
-                return message.reply({ content: '❌ Musisz odpowiedzieć (`reply`) komendą `!naprawkonkurs` na wiadomość z zepsutym konkursem!', ephemeral: true });
+                return message.reply({ content: '❌ Musisz odpowiedzieć (`reply`) na zepsuty konkurs!', ephemeral: true });
             }
 
             try {
                 const targetChannel = await client.channels.fetch(reference.channelId);
                 const targetMessage = await targetChannel.messages.fetch(reference.messageId);
 
-                if (!targetMessage || targetMessage.embeds.length === 0) {
-                    return message.reply({ content: '❌ Nie znaleziono poprawnej wiadomości konkursowej.', ephemeral: true });
-                }
-
-                // Odświeżamy przyciski z powrotem do działania
                 const row = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
                         .setCustomId('join_giveaway')
@@ -119,24 +119,21 @@ module.exports = (client) => {
 
                 const db = loadData();
                 if (!db.giveaways[targetMessage.id]) {
-                    // Jeśli baza nie miała zapisu, odtwarzamy go z domyślnym czasem 24h lub odczytujemy z embeda
                     db.giveaways[targetMessage.id] = {
                         channelId: targetChannel.id,
-                        endTime: Date.now() + (24 * 60 * 60 * 1000), // domyślnie na dobę w razie awarii
+                        endTime: Date.now() + (24 * 60 * 60 * 1000), 
                         participants: [],
                         ended: false
                     };
-                    saveData(db);
                 } else {
                     db.giveaways[targetMessage.id].ended = false;
-                    saveData(db);
                 }
+                saveData(db);
 
-                await message.reply({ content: '✅ **Pomyślnie naprawiono i zresetowano konkurs!** Przyciski znów działają.', ephemeral: true });
+                await message.reply({ content: '✅ **Pomyślnie naprawiono i zresetowano konkurs!**', ephemeral: true });
                 await message.delete().catch(() => {});
             } catch (err) {
-                console.error(err);
-                return message.reply({ content: '❌ Wystąpił błąd podczas naprawiania konkursu.', ephemeral: true });
+                return message.reply({ content: '❌ Błąd naprawy.', ephemeral: true });
             }
             return;
         }
@@ -173,23 +170,24 @@ module.exports = (client) => {
 
             const timestampUnix = Math.floor(endTimeMs / 1000);
 
-            // Dokładny układ z wartościami w nowych linijkach
+            // CAŁY TEKST W JEDNYM OPISIE (Description) TWORZĄCY EFEKT CYTOWANIA (blockquotes) JAK NA SCREENIE
+            const descriptionString = 
+                `🎁 **Do wygrania:** ${prize} 🎁\n\n` +
+                `> ⏳ **Koniec:** <t:${timestampUnix}:R> (${timeStr})\n` +
+                `> 👑 **Host:** ${message.member}\n` +
+                `> 📋 **Wymagania:** ${requirements}\n` +
+                (inviteLink ? `> 🔗 **Discord:** ${inviteLink}\n` : '') +
+                `> 👥 **Uczestnicy:** \`0\`\n\n` +
+                `👇 *Kliknij zielony przycisk poniżej, aby wziąć udział!*`;
+
             const embed = new EmbedBuilder()
                 .setAuthor({ name: 'SIDE COMMUNITY ZIOMECZKI.GG • KONKURSY', iconURL: message.guild.iconURL({ dynamic: true }) || null })
                 .setTitle('🎉 NOWY KONKURS! 🎉')
-                .setDescription(`🎁 **Do wygrania:** ${prize} 🎁\n\n👇 *Kliknij zielony przycisk poniżej, aby wziąć udział!*`)
+                .setDescription(descriptionString)
                 .setColor('#F1C40F')
-                .addFields(
-                    { name: '⏳ Koniec:', value: `> <t:${timestampUnix}:R> (${timeStr})`, inline: false },
-                    { name: '👑 Host:', value: `> ${message.member}`, inline: false },
-                    { name: '📋 Wymagania:', value: `> ${requirements}`, inline: false },
-                    ...(inviteLink ? [{ name: '🔗 Discord:', value: `> ${inviteLink}`, inline: false }] : []),
-                    { name: '👥 Uczestnicy:', value: `> \`0\``, inline: false }
-                )
                 .setImage('https://cdn.discordapp.com/attachments/1523090420282949662/1525868085842677800/ziomeckkigg.png?ex=6a6ea824&is=6a6d56a4&hm=491057f9ba1f7aed00ea87db30d80290040d8a370b3ba9ba4c10a87294265b65&')
                 .setFooter({ text: `Powodzenia! • Dziś o ${timeStr}`, iconURL: client.user.displayAvatarURL() });
 
-            // Dwa przyciski: Dołączania oraz Administracyjny (Lista uczestników)
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId('join_giveaway')
@@ -222,7 +220,6 @@ module.exports = (client) => {
         const db = loadData();
         const gData = db.giveaways[interaction.message.id];
 
-        // Obsługa przycisku listy uczestników dla administracji
         if (interaction.customId === 'list_participants') {
             if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
                 return interaction.reply({ content: '❌ Ten przycisk jest dostępny tylko dla Administratorów!', ephemeral: true });
@@ -239,7 +236,7 @@ module.exports = (client) => {
         if (interaction.customId !== 'join_giveaway') return;
 
         if (!gData) {
-            return interaction.reply({ content: '❌ Konkurs nie został znaleziony w bazie. Jeśli bot był restartowany, użyj komendy `!naprawkonkurs` w odpowiedzi na tę wiadomość.', ephemeral: true });
+            return interaction.reply({ content: '❌ Konkurs nie został znaleziony. Jeśli bot był restartowany, Administrator może użyć komendy `!naprawkonkurs` w odpowiedzi na tę wiadomość.', ephemeral: true });
         }
 
         if (gData.ended || Date.now() >= gData.endTime) {
@@ -247,7 +244,6 @@ module.exports = (client) => {
         }
 
         const userId = interaction.user.id;
-
         if (!gData.participants) gData.participants = [];
 
         if (gData.participants.includes(userId)) {
@@ -269,13 +265,11 @@ async function updateEmbedParticipants(message, count) {
         const oldEmbed = message.embeds[0];
         const newEmbed = EmbedBuilder.from(oldEmbed);
         
-        const fields = newEmbed.data.fields;
-        for (let field of fields) {
-            if (field.name.includes('Uczestnicy')) {
-                field.value = `> \`${count}\``;
-            }
-        }
-
+        let desc = oldEmbed.description;
+        // Używamy Regex, by w opisie zmienić starą liczbę uczestników na nową zachowując to samo formatowanie
+        desc = desc.replace(/> 👥 \*\*Uczestnicy:\*\* `\d+`/, `> 👥 **Uczestnicy:** \`${count}\``);
+        
+        newEmbed.setDescription(desc);
         await message.edit({ embeds: [newEmbed] });
     } catch (e) {
         console.error('Błąd aktualizacji licznika uczestników:', e);
