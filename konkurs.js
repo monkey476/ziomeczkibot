@@ -108,7 +108,7 @@ module.exports = (client) => {
 
             const timestampUnix = Math.floor(endTimeMs / 1000);
 
-            // Dokładne odtworzenie formatowania i ikon z Twojego docelowego screena
+            // Układ z rozdzielonymi ikonami/nagłówkami i wartościami w nowych linijkach
             const embed = new EmbedBuilder()
                 .setAuthor({ name: 'SIDE COMMUNITY ZIOMECZKI.GG • KONKURSY', iconURL: message.guild.iconURL({ dynamic: true }) || null })
                 .setTitle('🎉 NOWY KONKURS! 🎉')
