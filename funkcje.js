@@ -3,7 +3,7 @@ const { EmbedBuilder } = require('discord.js');
 // --- KONFIGURACJA KANAŁU 4FUN ---
 const CHANNEL_ID = '1533292902271291432'; // ❓・zgadnij-słowo
 
-// Baza unikalnych zagadek i słów (każda jest inna, żadna się nie powtórzy)
+// Baza unikalnych zagadek i słów (żaden się nie powtórzy, dopóki wszystkie nie zostaną wykorzystane)
 const zagadki = [
     {
         zagadka: "Mam klucze, ale nie otwieram żadnych drzwi. Mam przestrzenie, ale nie mam pokoi. Możesz wejść, ale nie możesz wyjść na zewnątrz. Co to takiego?",
@@ -66,7 +66,7 @@ const zagadki = [
         wskazówka: "Nieubłaganie leci do przodu."
     },
     {
-        zagadka: "Co ma zęby, ale nie potrafigryźć?",
+        zagadka: "Co ma zęby, ale nie potrafi gryźć?",
         odpowiedz: "grzebień",
         wskazówka: "Używasz tego do czesania włosów."
     },
@@ -82,63 +82,75 @@ const zagadki = [
     }
 ];
 
-// Zbiór do śledzenia już wysłanych zagadek (zapobiega powtórzeniom)
+// Zbiór do śledzenia wysłanych zagadek (zapobiega powtórzeniom)
 let wyslaneZagadki = new Set();
+
+async function wyslijZagadke(client) {
+    try {
+        const channel = await client.channels.fetch(CHANNEL_ID).catch(() => null);
+        if (!channel) return console.log('[4Fun] Nie znaleziono kanału do zgadywania słów!');
+
+        // Jeśli wykorzystaliśmy wszystkie zagadki, resetujemy pamięć, by mogły się powtórzyć w nowym cyklu
+        if (wyslaneZagadki.size >= zagadki.length) {
+            wyslaneZagadki.clear();
+        }
+
+        // Losujemy unikalną zagadkę
+        let dostepneIndeksy = [];
+        for (let i = 0; i < zagadki.length; i++) {
+            if (!wyslaneZagadki.has(i)) dostepneIndeksy.push(i);
+        }
+
+        const wylosowanyIndeks = dostepneIndeksy[Math.floor(Math.random() * dostepneIndeksy.length)];
+        wyslaneZagadki.add(wylosowanyIndeks);
+
+        const aktualnaZagadka = zagadki[wylosowanyIndeks];
+
+        const embed = new EmbedBuilder()
+            .setAuthor({ 
+                name: 'SIDE COMMUNITY ZIOMECZKI.GG • STREFA 4FUN', 
+                iconURL: channel.guild.iconURL({ dynamic: true }) || null 
+            })
+            .setTitle('❓ • CZAS NA ZGADNIJ SŁOWO!')
+            .setDescription(
+                `> Rozruszaj swoje szare komórki! Kto pierwszy odgadnie ukryte słowo na podstawie poniższej zagadki, wygrywa tę rundę!\n\n` +
+                `🧩 **ZAGADKA:**\n` +
+                `\`\`\`text\n${aktualnaZagadka.zagadka}\`\`\`\n` +
+                `💡 **Wskazówka:** *${aktualnaZagadka.wskazówka}*\n\n` +
+                `✍️ **Jak odpowiedzieć?**\n` +
+                `*Po prostu napisz swoją odpowiedź na tym kanale! Kolejna zagadka pojawi się o pełnej godzinie.*`
+            )
+            .setColor('#F1C40F')
+            .setImage('https://cdn.discordapp.com/attachments/1523090420282949662/1525868085842677800/ziomeckkigg.png?ex=6a6ea824&is=6a6d56a4&hm=491057f9ba1f7aed00ea87db30d80290040d8a370b3ba9ba4c10a87294265b65&')
+            .setFooter({ 
+                text: 'Zabawa automatyczna o pełnej godzinie • Side Community Ziomeczki.gg', 
+                iconURL: client.user.displayAvatarURL() 
+            })
+            .setTimestamp();
+
+        await channel.send({ embeds: [embed] });
+    } catch (error) {
+        console.error('[4Fun] Błąd podczas wysyłania zagadki:', error);
+    }
+}
 
 module.exports = (client) => {
     client.once('ready', () => {
-        console.log('[4Fun] Moduł "Zgadnij Słowo" został pomyślnie uruchomiony!');
+        console.log('[4Fun] Moduł "Zgadnij Słowo" został pomyślnie uruchomiony i synchronizuje się z pełną godziną!');
 
-        // Główna pętla wywoływana co 1 godzinę (1 * 60 * 60 * 1000 ms)
-        setInterval(async () => {
-            try {
-                const channel = await client.channels.fetch(CHANNEL_ID).catch(() => null);
-                if (!channel) return console.log('[4Fun] Nie znaleziono kanału do zgadywania słów!');
+        // Obliczamy ile czasu zostało do następnej pełnej godziny
+        const teraz = new Date();
+        const msDoNastepnejGodziny = (60 - teraz.getMinutes()) * 60 * 1000 - teraz.getSeconds() * 1000 - teraz.getMilliseconds();
 
-                // Sprawdzamy, czy wykorzystaliśmy już wszystkie zagadki z bazy. Jeśli tak, resetujemy pamięć.
-                if (wyslaneZagadki.size >= zagadki.length) {
-                    wyslaneZagadki.clear();
-                }
-
-                // Losujemy unikalną zagadkę, której jeszcze nie było
-                let dostepneIndeksy = [];
-                for (let i = 0; i < zagadki.length; i++) {
-                    if (!wyslaneZagadki.has(i)) dostepneIndeksy.push(i);
-                }
-
-                const wylosowanyIndeks = dostepneIndeksy[Math.floor(Math.random() * dostepneIndeksy.length)];
-                wyslaneZagadki.add(wylosowanyIndeks);
-
-                const aktualnaZagadka = zagadki[wylosowanyIndeks];
-
-                // Przygotowujemy przepiękny, luksusowy embed wizualny
-                const embed = new EmbedBuilder()
-                    .setAuthor({ 
-                        name: 'SIDE COMMUNITY ZIOMECZKI.GG • STREFA 4FUN', 
-                        iconURL: channel.guild.iconURL({ dynamic: true }) || null 
-                    })
-                    .setTitle('❓ • CZAS NA ZGADNIJ SŁOWO!')
-                    .setDescription(
-                        `> Rozruszaj swoje szare komórki! Kto pierwszy odgadnie ukryte słowo na podstawie poniższej zagadki, wygrywa tę rundę!\n\n` +
-                        `🧩 **ZAGADKA:**\n` +
-                        `\`\`\`text\n${aktualnaZagadka.zagadka}\`\`\`\n` +
-                        `💡 **Wskazówka:** *${aktualnaZagadka.wskazówka}*\n\n` +
-                        `✍️ **Jak odpowiedzieć?**\n` +
-                        `*Po prostu napisz swoją odpowiedź na tym kanale! Następna zagadka pojawi się za godzinę.*`
-                    )
-                    .setColor('#F1C40F') // Królewski złoty kolor dla zagadek
-                    .setImage('https://cdn.discordapp.com/attachments/1523090420282949662/1525868085842677800/ziomeckkigg.png?ex=6a6ea824&is=6a6d56a4&hm=491057f9ba1f7aed00ea87db30d80290040d8a370b3ba9ba4c10a87294265b65&')
-                    .setFooter({ 
-                        text: 'Zabawa automatyczna co 1h • Side Community Ziomeczki.gg', 
-                        iconURL: client.user.displayAvatarURL() 
-                    })
-                    .setTimestamp();
-
-                await channel.send({ embeds: [embed] });
-
-            } catch (error) {
-                console.error('[4Fun] Błąd podczas wysyłania zagadki:', error);
-            }
-        }, 60 * 60 * 1000); // 1 godzina
+        // Uruchamiamy pierwsze wysłanie dokładnie na pełną godzinę, a potem co równe 60 minut
+        setTimeout(() => {
+            wyslijZagadke(client);
+            
+            // Kolejne zagadki dokładnie co 1 godzinę
+            setInterval(() => {
+                wyslijZagadke(client);
+            }, 60 * 60 * 1000);
+            
+        }, msDoNastepnejGodziny);
     });
 };
