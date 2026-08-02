@@ -93,12 +93,12 @@ module.exports = (client) => {
             const leftSide = parts[0].trim().split(' ');
             const dateStr = leftSide[0]; 
             const timeStr = leftSide[1]; 
-            const prize = leftSide.slice(2).join(' '); // Nagroda z zachowaniem emoji
+            const prize = leftSide.slice(2).join(' ');
 
             const rightPart = parts.slice(1).join('|');
             const rightSide = rightPart.split('/');
             const requirements = rightSide[0] ? rightSide[0].trim() : 'Brak wymagań';
-            const inviteLink = rightSide.slice(1).join('/').trim(); // Pełny link z https://
+            const inviteLink = rightSide.slice(1).join('/').trim();
 
             const [day, month, year] = dateStr.split('.').map(Number);
             const [hour, minute] = timeStr.split(':').map(Number);
@@ -108,18 +108,18 @@ module.exports = (client) => {
 
             const timestampUnix = Math.floor(endTimeMs / 1000);
 
-            // Dokładny układ linijek oraz ikony jak na Twoim pierwszym wzorze
+            // Dokładne odtworzenie formatowania i ikon z Twojego docelowego screena
             const embed = new EmbedBuilder()
                 .setAuthor({ name: 'SIDE COMMUNITY ZIOMECZKI.GG • KONKURSY', iconURL: message.guild.iconURL({ dynamic: true }) || null })
                 .setTitle('🎉 NOWY KONKURS! 🎉')
-                .setDescription(`🎁 **Do wygrania:** ${prize} 🎁`)
+                .setDescription(`🎁 **Do wygrania:** ${prize} 🎁\n\n👇 *Kliknij zielony przycisk poniżej, aby wziąć udział!*`)
                 .setColor('#F1C40F')
                 .addFields(
-                    { name: '⏳ Koniec', value: `> <t:${timestampUnix}:R> (${timeStr})`, inline: false },
-                    { name: '👑 Host', value: `> ${message.member}`, inline: false }, // Wyświetla pełną nazwę/rolę hosta jak pierwotnie
-                    { name: '📋 Wymagania', value: `> ${requirements}`, inline: false },
-                    ...(inviteLink ? [{ name: '🔗 Discord', value: `> ${inviteLink}`, inline: false }] : []),
-                    { name: '👥 Uczestnicy', value: `> \`0\``, inline: false }
+                    { name: '⏳ Koniec:', value: `> <t:${timestampUnix}:R> (${timeStr})`, inline: false },
+                    { name: '👑 Host:', value: `> ${message.member}`, inline: false },
+                    { name: '📋 Wymagania:', value: `> ${requirements}`, inline: false },
+                    ...(inviteLink ? [{ name: '🔗 Discord:', value: `> ${inviteLink}`, inline: false }] : []),
+                    { name: '👥 Uczestnicy:', value: `> \`0\``, inline: false }
                 )
                 .setImage('https://cdn.discordapp.com/attachments/1523090420282949662/1525868085842677800/ziomeckkigg.png?ex=6a6ea824&is=6a6d56a4&hm=491057f9ba1f7aed00ea87db30d80290040d8a370b3ba9ba4c10a87294265b65&')
                 .setFooter({ text: `Powodzenia! • Dziś o ${timeStr}`, iconURL: client.user.displayAvatarURL() });
