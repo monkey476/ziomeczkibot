@@ -126,7 +126,7 @@ module.exports = (client) => {
                         .setEmoji('🙋‍♂️')
                 );
 
-                await ticketChannel.send({ content: `${member} | @here`, embeds: [ticketEmbed], components: [ticketRow] });
+                await ticketChannel.send({ content: `${member} | @ticket`, embeds: [ticketEmbed], components: [ticketRow] });
                 
                 await interaction.message.edit({ components: [interaction.message.components[0]] }).catch(() => {});
                 await interaction.editReply({ content: `✅ Twój ticket został pomyślnie utworzony: ${ticketChannel}` });
