@@ -1,106 +1,134 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionsBitField } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
-// --- KONFIGURACJA ---
-const GIVEAWAY_CHANNEL_ID = '1532418596159095105'; 
-const ZIOMECZKI_LOGO_URL = 'https://cdn.discordapp.com/attachments/1523090420282949662/1525868085842677800/ziomeckkigg.png?ex=6a6ea824&is=6a6d56a4&hm=491057f9ba1f7aed00ea87db30d80290040d8a370b3ba9ba4c10a87294265b65&'; 
+const dbPath = path.join(__dirname, 'giveaways_data.json');
 
-const giveawayParticipants = new Map();
+// Bezpieczne wczytywanie bazy konkursów
+function loadData() {
+    try {
+        if (!fs.existsSync(dbPath)) {
+            const initialData = { giveaways: {} };
+            fs.writeFileSync(dbPath, JSON.stringify(initialData, null, 2));
+            return initialData;
+        }
+        return JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    } catch (e) {
+        return { giveaways: {} };
+    }
+}
+
+function saveData(data) {
+    fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
+}
 
 module.exports = (client) => {
-    // 1. Odbieranie komend z wiadomości
+
+    // Sprawdzanie i zamykanie konkursów, które minęły (nawet po restarcie bota)
+    client.once('ready', () => {
+        console.log('[Konkursy] Moduł systemowy został pomyślnie uruchomiony!');
+        
+        setInterval(async () => {
+            const db = loadData();
+            const now = new Date().getTime();
+
+            for (const [messageId, gData] of Object.entries(db.giveaways)) {
+                if (!gData.ended && now >= gData.endTime) {
+                    gData.ended = true;
+                    saveData(db);
+
+                    try {
+                        const channel = await client.channels.fetch(gData.channelId).catch(() => null);
+                        if (!channel) continue;
+                        const message = await channel.messages.fetch(messageId).catch(() => null);
+                        if (!message) continue;
+
+                        // Losowanie zwycięzcy
+                        let winnerText = 'Brak uczestników spełniających warunki.';
+                        if (gData.participants && gData.participants.length > 0) {
+                            const winnerId = gData.participants[Math.floor(Math.random() * gData.participants.length)];
+                            winnerText = `🎉 Zwycięzca: <@${winnerId}>! Gratulacje!`;
+                        }
+
+                        const oldEmbed = message.embeds[0];
+                        const endedEmbed = EmbedBuilder.from(oldEmbed)
+                            .setTitle('🎉 KONURS ROZSTRZYGNIĘTY! 🎉')
+                            .setColor('#E74C3C')
+                            .addFields({ name: '🏆 Wynik', value: `> **${winnerText}**`, inline: false });
+
+                        const disabledRow = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('join_giveaway')
+                                .setLabel('Konkurs zakończony')
+                                .setStyle(ButtonStyle.Secondary)
+                                .setEmoji('🔒')
+                                .setDisabled(true)
+                        );
+
+                        await message.edit({ embeds: [endedEmbed], components: [disabledRow] });
+                        await channel.send({ content: `📢 Konkurs dobiegł końca! ${winnerText}` });
+
+                    } catch (err) {
+                        console.error('[Konkursy] Błąd podczas kończenia konkursu:', err);
+                    }
+                }
+            }
+        }, 10 * 1000); // Sprawdza co 10 sekund
+    });
+
+    // Obsługa komendy !konkurs Data Godzina Nagroda | Wymagania / Link
     client.on('messageCreate', async (message) => {
-        if (message.author.bot) return;
+        if (message.author.bot || !message.guild) return;
 
-        if (message.content.startsWith('!konkurs') && message.channel.id === GIVEAWAY_CHANNEL_ID) {
-            
-            const args = message.content.slice(8).trim().split(/\s+/);
-            
-            let timeMs = 0;
-            let rawPrizeText = '';
-
-            const dateRegex = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/;
-            const timeRegex = /^(\d{1,2}):(\d{2})$/;
-
-            if (args.length >= 3 && dateRegex.test(args[0]) && timeRegex.test(args[1])) {
-                const dateMatch = args[0].match(dateRegex);
-                const timeMatch = args[1].match(timeRegex);
-
-                const day = parseInt(dateMatch[1], 10);
-                const month = parseInt(dateMatch[2], 10) - 1; 
-                const year = parseInt(dateMatch[3], 10);
-                const hour = parseInt(timeMatch[1], 10);
-                const minute = parseInt(timeMatch[2], 10);
-
-                const targetDate = new Date();
-                targetDate.setFullYear(year, month, day);
-                targetDate.setHours(hour, minute, 0, 0);
-
-                timeMs = targetDate.getTime() - Date.now();
-                rawPrizeText = args.slice(2).join(' ');
-            } 
-            else if (args.length >= 2 && /^\d+$/.test(args[0])) {
-                const minutes = parseInt(args[0], 10);
-                if (!isNaN(minutes)) {
-                    timeMs = minutes * 60 * 1000;
-                    rawPrizeText = args.slice(1).join(' ');
-                }
+        if (message.content.startsWith('!konkurs')) {
+            if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                return message.reply({ content: '❌ Nie masz uprawnień Administratora do tworzenia konkursów!', ephemeral: true });
             }
 
-            if (isNaN(timeMs) || timeMs === 0 || !rawPrizeText) {
-                const errReply = await message.reply(`❌ Błędny format!\nUżyj: \`!konkurs [minuty] [nagroda] | [wymagania] / [discord]\` LUB \`!konkurs [DD.MM.YYYY] [HH:MM] [nagroda]\`\nNp: \`!konkurs 01.08.2026 19:00 1B | Zostaw suba / discord.gg/ziomeczki\``);
-                setTimeout(() => errReply.delete().catch(() => {}), 15000);
-                return;
+            // Usunięcie wiadomości z komendą
+            await message.delete().catch(() => {});
+
+            // Parsowanie argumentów: !konkurs 01.08.2026 20:00 20b na Kaucja Simulator | Wymagania / Link
+            const rawContent = message.content.replace('!konkurs', '').trim();
+            const parts = rawContent.split('|');
+
+            if (parts.length < 2) {
+                return message.channel.send({ content: '❌ **Błędny format!** Przykład użycia:\n`!konkurs 01.08.2026 20:00 20b na Kaucja Simulator | Wbicie na discorda ZIOMECZKI.GG / https://discord.gg/yuFaCRrdMD`' });
             }
 
-            if (timeMs <= 0) {
-                const errReply = await message.reply(`❌ Podana data jest w przeszłości! Ustaw przyszłą datę.`);
-                setTimeout(() => errReply.delete().catch(() => {}), 10000);
-                return;
-            }
+            const leftSide = parts[0].trim().split(' '); // [Data, Godzina, Nagroda...]
+            const dateStr = leftSide[0]; // 01.08.2026
+            const timeStr = leftSide[1]; // 20:00
+            const prize = leftSide.slice(2).join(' '); // 20b na Kaucja Simulator
 
-            if (timeMs > 2147483647) {
-                const errReply = await message.reply(`❌ Maksymalny czas trwania to około 24 dni. Podaj bliższą datę.`);
-                setTimeout(() => errReply.delete().catch(() => {}), 10000);
-                return;
-            }
+            const rightSide = parts[1].split('/'); // [Wymagania, Link]
+            const requirements = rightSide[0] ? rightSide[0].trim() 'Brak wymagań';
+            const inviteLink = rightSide[1] ? rightSide[1].trim() : '';
 
-            let prize = rawPrizeText;
-            let requirements = '';
-            let discord = '';
+            // Obliczanie czasu końca
+            const [day, month, year] = dateStr.split('.').map(Number);
+            const [hour, minute] = timeStr.split(':').map(Number);
+            const endDate = new Date(year, month - 1, day, hour, minute);
+            const endTimeMs = endDate.getTime();
 
-            if (rawPrizeText.includes('|')) {
-                const parts = rawPrizeText.split('|');
-                prize = parts[0].trim();
-                let rest = parts.slice(1).join('|').trim();
+            // Formatowanie wyświetlania czasu
+            const timestampUnix = Math.floor(endDate.getTime() / 1000);
 
-                if (rest.includes('/')) {
-                    const subParts = rest.split('/');
-                    requirements = subParts[0].trim();
-                    discord = subParts.slice(1).join('/').trim();
-                } else {
-                    requirements = rest;
-                }
-            } else if (rawPrizeText.includes('/')) {
-                const parts = rawPrizeText.split('/');
-                prize = parts[0].trim();
-                discord = parts.slice(1).join('/').trim();
-            }
-
-            const endTime = Math.floor((Date.now() + timeMs) / 1000);
-
-            let embedDesc = `\n> ⏳ **Koniec:** <t:${endTime}:R> (<t:${endTime}:t>)\n> 👑 **Host:** ${message.author}\n`;
-            if (requirements) embedDesc += `> 📋 **Wymagania:** ${requirements}\n`;
-            if (discord) embedDesc += `> 🔗 **Discord:** ${discord}\n`;
-            embedDesc += `> 👥 **Uczestnicy:** \`0\`\n\n👇 *Kliknij zielony przycisk poniżej, aby wziąć udział!*`;
-
+            // Wygląd embeda dokładnie jak na załączonym screenie
             const embed = new EmbedBuilder()
-                .setAuthor({ name: '🎊 NOWY KONKURS! 🎊', iconURL: message.guild.iconURL({ dynamic: true }) || null })
-                .setTitle(`🎁 Do wygrania: **${prize}**`)
-                .setDescription(embedDesc)
-                .setColor('#FFD700')
-                .setThumbnail(ZIOMECZKI_LOGO_URL) 
-                .setFooter({ text: 'Powodzenia!', iconURL: client.user.displayAvatarURL() })
-                .setTimestamp(endTime * 1000);
+                .setAuthor({ name: 'SIDE COMMUNITY ZIOMECZKI.GG • KONKURSY', iconURL: message.guild.iconURL({ dynamic: true }) || null })
+                .setTitle('🎉 NOWY KONKURS! 🎉')
+                .setDescription(`🎁 **Do wygrania:** \`${prize}\` 🎁`)
+                .setColor('#F1C40F')
+                .addFields(
+                    { name: '⏳ Koniec', value: `> <t:${timestampUnix}:R> (${timeStr})`, inline: false },
+                    { name: '👑 Host', value: `> ${message.member}`, inline: false },
+                    { name: '📋 Wymagania', value: `> ${requirements}`, inline: false },
+                    ...(inviteLink ? [{ name: '🔗 Discord', value: `> ${inviteLink}`, inline: false }] : []),
+                    { name: '👥 Uczestnicy', value: `> \`0\``, inline: false }
+                )
+                .setImage('https://cdn.discordapp.com/attachments/1523090420282949662/1525868085842677800/ziomeckkigg.png?ex=6a6ea824&is=6a6d56a4&hm=491057f9ba1f7aed00ea87db30d80290040d8a370b3ba9ba4c10a87294265b65&')
+                .setFooter({ text: `Powodzenia! • Dziś o ${timeStr}`, iconURL: client.user.displayAvatarURL() });
 
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
@@ -110,83 +138,68 @@ module.exports = (client) => {
                     .setEmoji('🎉')
             );
 
-            const giveawayMsg = await message.channel.send({ embeds: [embed], components: [row] });
-            
-            giveawayParticipants.set(giveawayMsg.id, new Set());
+            const sentMessage = await message.channel.send({ embeds: [embed], components: [row] });
 
-            setTimeout(async () => {
-                const participantsSet = giveawayParticipants.get(giveawayMsg.id);
-                const participants = Array.from(participantsSet || []);
-
-                const disabledRow = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('join_giveaway')
-                        .setLabel('Konkurs zakończony')
-                        .setStyle(ButtonStyle.Secondary)
-                        .setEmoji('🛑')
-                        .setDisabled(true)
-                );
-
-                const endedEmbed = new EmbedBuilder()
-                    .setAuthor({ name: '🎊 KONKURS ZAKOŃCZONY 🎊', iconURL: message.guild.iconURL({ dynamic: true }) || null })
-                    .setTitle(`🎁 Nagroda: **${prize}**`)
-                    .setColor('#2B2D31')
-                    .setThumbnail(ZIOMECZKI_LOGO_URL) 
-                    .setFooter({ text: 'Zakończono' })
-                    .setTimestamp();
-
-                let endedDesc = `\n> 👑 **Host:** ${message.author}\n`;
-                if (requirements) endedDesc += `> 📋 **Wymagania:** ${requirements}\n`;
-                if (discord) endedDesc += `> 🔗 **Discord:** ${discord}\n`;
-
-                if (participants.length === 0) {
-                    endedEmbed.setDescription(endedDesc + `> 👥 **Uczestnicy:** \`0\`\n\n❌ **Nikt nie wziął udziału w konkursie!**`);
-                    await giveawayMsg.edit({ embeds: [endedEmbed], components: [disabledRow] }).catch(() => {});
-                    await message.channel.send(`❌ Konkurs o **${prize}** zakończony, ale nikt nie wziął udziału!`);
-                } else {
-                    const winnerId = participants[Math.floor(Math.random() * participants.length)];
-                    endedEmbed.setDescription(endedDesc + `> 👥 **Uczestnicy:** \`${participants.length}\`\n\n🏆 **ZWYCIĘZCA:** <@${winnerId}>`);
-                    await giveawayMsg.edit({ embeds: [endedEmbed], components: [disabledRow] }).catch(() => {});
-                    await message.channel.send(`🎉 Gratulacje <@${winnerId}>! Wygrałeś/aś: **${prize}**! 🏆 Zgłoś się do hosta po odbiór nagrody.`);
-                }
-
-                giveawayParticipants.delete(giveawayMsg.id);
-            }, timeMs);
+            // Zapisz konkurs do bazy JSON
+            const db = loadData();
+            db.giveaways[sentMessage.id] = {
+                channelId: message.channel.id,
+                endTime: endTimeMs,
+                participants: [],
+                ended: false
+            };
+            saveData(db);
         }
     });
 
-    // 2. Obsługa przycisków (naprawiona, bez błędu "Ta aplikacja nie odpowiedziała na czas")
+    // Obsługa kliknięcia w przycisk "Weź udział"
     client.on('interactionCreate', async (interaction) => {
-        if (!interaction.isButton()) return;
+        if (!interaction.isButton() || interaction.customId !== 'join_giveaway') return;
 
-        if (interaction.customId === 'join_giveaway') {
-            const giveawayMsgId = interaction.message.id;
-            
-            if (!giveawayParticipants.has(giveawayMsgId)) {
-                return interaction.reply({ content: '❌ Ten konkurs już się zakończył lub nastąpił restart bota!', ephemeral: true });
-            }
+        const db = loadData();
+        const gData = db.giveaways[interaction.message.id];
 
-            const participantsSet = giveawayParticipants.get(giveawayMsgId);
-            const userId = interaction.user.id;
-            let responseText = '';
+        if (!gData || gData.ended) {
+            return interaction.reply({ content: '❌ Ten konkurs już się zakończył!', ephemeral: true });
+        }
 
-            if (participantsSet.has(userId)) {
-                participantsSet.delete(userId);
-                responseText = '🚪 Zrezygnowałeś z udziału w konkursie!';
-            } else {
-                participantsSet.add(userId);
-                responseText = '🎉 Dołączyłeś/aś do konkursu! Trzymamy kciuki!';
-            }
+        const userId = interaction.user.id;
 
-            // Aktualizujemy embed z nową liczbą uczestników
-            const originalEmbed = EmbedBuilder.from(interaction.message.embeds[0]);
-            originalEmbed.setDescription(originalEmbed.data.description.replace(/> 👥 \*\*Uczestnicy:\*\* \`\d+\`/, `> 👥 **Uczestnicy:** \`${participantsSet.size}\``));
+        if (gData.participants.includes(userId)) {
+            // Wypisanie się z konkursu (opcjonalnie, lub info że już bierze udział)
+            gData.participants = gData.participants.filter(id => id !== userId);
+            saveData(db);
 
-            // Zamiast zwykłej edycji, używamy interaction.update, co natychmiastowo potwierdza kliknięcie dla Discorda
-            await interaction.update({ embeds: [originalEmbed] }).catch(() => {});
+            // Aktualizujemy licznik w embedzie
+            await updateEmbedParticipants(interaction.message, gData.participants.length);
+            return interaction.reply({ content: '❌ Pomyślnie wypisano Cię z konkursu.', ephemeral: true });
+        } else {
+            // Zapisanie do konkursu
+            gData.participants.push(userId);
+            saveData(db);
 
-            // Wysyłamy ukryte powiadomienie do gracza (ephemeral)
-            await interaction.followUp({ content: responseText, ephemeral: true }).catch(() => {});
+            await updateEmbedParticipants(interaction.message, gData.participants.length);
+            return interaction.reply({ content: '✅ **Sukces!** Bierzesz udział w konkursie. Powodzenia!', ephemeral: true });
         }
     });
 };
+
+// Pomocnicza funkcja do aktualizowania licznika uczestników na żywo w wiadomości
+async function updateEmbedParticipants(message, count) {
+    try {
+        const oldEmbed = message.embeds[0];
+        const newEmbed = EmbedBuilder.from(oldEmbed);
+        
+        // Znajdujemy pole "Uczestnicy" i podmieniamy wartość
+        const fields = newEmbed.data.fields;
+        for (let field of fields) {
+            if (field.name.includes('Uczestnicy')) {
+                field.value = `> \`${count}\``;
+            }
+        }
+
+        await message.edit({ embeds: [newEmbed] });
+    } catch (e) {
+        console.error('Błąd aktualizacji licznika uczestników:', e);
+    }
+}
