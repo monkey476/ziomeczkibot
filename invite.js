@@ -1,104 +1,169 @@
-const { EmbedBuilder, Collection } = require('discord.js');
+const { EmbedBuilder } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
-// Mapa przechowująca początkowe użycia zaproszeń
-const invitesCache = new Collection();
+// Ścieżka do naszego pliku z bazą zaproszeń
+const dbPath = path.join(__dirname, 'invites_data.json');
+
+// Tworzymy plik JSON, jeśli jeszcze nie istnieje
+if (!fs.existsSync(dbPath)) {
+    fs.writeFileSync(dbPath, JSON.stringify({ users: {}, invitedBy: {} }));
+}
+
+// Funkcje pomocnicze do wczytywania i zapisywania bazy
+function loadData() {
+    try {
+        return JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    } catch (e) {
+        return { users: {}, invitedBy: {} };
+    }
+}
+
+function saveData(data) {
+    fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
+}
+
+// Pamięć RAM bota do porównywania zaproszeń (które zaproszenie zyskało użycie)
+const invitesCache = new Map();
 
 module.exports = (client) => {
 
-    // Pobieramy i zapisujemy stan zaproszeń po starcie bota dla każdego serwera
-    client.once('ready', async () => {
-        for (const [guildId, guild] of client.guilds.cache) {
-            try {
-                const firstInvites = await guild.invites.fetch();
-                invitesCache.set(guildId, new Collection(firstInvites.map(inv => [inv.code, inv.uses])));
-            } catch (err) {
-                console.log(`Nie udało się pobrać zaproszeń dla serwera ${guild.name} (brak uprawnień Zarządzania Serwerem?).`);
-            }
+    // 1. POBIERANIE ZAPROSZEŃ PRZY STARCIE BOTA
+    client.on('ready', async () => {
+        setTimeout(async () => {
+            client.guilds.cache.forEach(async (guild) => {
+                try {
+                    const firstInvites = await guild.invites.fetch();
+                    invitesCache.set(guild.id, new Map(firstInvites.map(inv => [inv.code, inv.uses])));
+                } catch (err) {
+                    console.log(`[Invite System] Brak uprawnienia "Zarządzanie Serwerem" na: ${guild.name}`);
+                }
+            });
+        }, 3000); // Małe opóźnienie, by bot spokojnie się zalogował
+    });
+
+    // 2. AKTUALIZACJA PAMIĘCI PRZY TWORZENIU/USUWANIU LINKÓW
+    client.on('inviteCreate', (invite) => {
+        if (!invitesCache.has(invite.guild.id)) {
+            invitesCache.set(invite.guild.id, new Map());
+        }
+        invitesCache.get(invite.guild.id).set(invite.code, invite.uses);
+    });
+
+    client.on('inviteDelete', (invite) => {
+        if (invitesCache.has(invite.guild.id)) {
+            invitesCache.get(invite.guild.id).delete(invite.code);
         }
     });
 
-    // Aktualizacja pamięci podręcznej, gdy ktoś stworzy nowe zaproszenie
-    client.on('inviteCreate', async (invite) => {
-        const guildInvites = invitesCache.get(invite.guild.id) || new Collection();
-        guildInvites.set(invite.code, invite.uses);
-        invitesCache.set(invite.guild.id, guildInvites);
-    });
-
-    // Usunięcie zaproszenia z pamięci, gdy wygaśnie lub zostanie skasowane
-    client.on('inviteDelete', async (invite) => {
-        const guildInvites = invitesCache.get(invite.guild.id);
-        if (guildInvites) {
-            guildInvites.delete(invite.code);
-        }
-    });
-
-    // Sprawdzanie, kto kogo zaprosił podczas dołączenia nowego użytkownika
-    // (Uwaga: Bot musi mieć włączoną intencję GatewayIntentBits.GuildInvites oraz uprawnienia serwera)
+    // 3. OBSŁUGA WEJŚCIA GRACZA NA SERWER (Dodawanie pkt)
     client.on('guildMemberAdd', async (member) => {
+        if (member.user.bot) return; // Ignorujemy boty
+        const guild = member.guild;
+
         try {
-            const guild = member.guild;
-            const cachedInvites = invitesCache.get(guild.id) || new Collection();
             const newInvites = await guild.invites.fetch();
+            const oldInvites = invitesCache.get(guild.id) || new Map();
+            
+            // Szukamy linku, któremu podskoczyły użycia
+            const usedInvite = newInvites.find(inv => {
+                const oldUses = oldInvites.get(inv.code) || 0;
+                return inv.uses > oldUses;
+            });
 
-            // Szukamy zaproszenia, którego liczba użyć się zwiększyła
-            const usedInvite = newInvites.find(inv => cachedInvites.get(inv.code) < inv.uses);
-
-            // Aktualizujemy cache
-            invitesCache.set(guild.id, new Collection(newInvites.map(inv => [inv.code, inv.uses])));
+            // Aktualizujemy pamięć RAM na bieżąco
+            invitesCache.set(guild.id, new Map(newInvites.map(inv => [inv.code, inv.uses])));
 
             if (usedInvite && usedInvite.inviter) {
-                // Tutaj możesz opcjonalnie wysłać powiadomienie na kanał powitań
-                console.log(`👤 ${member.user.tag} dołączył dzięki zaproszeniu od ${usedInvite.inviter.tag} (kod: ${usedInvite.code})`);
+                const inviterId = usedInvite.inviter.id;
+                const db = loadData();
+
+                // Zapisujemy w historii "KTO ZAPROSIŁ KOGO"
+                db.invitedBy[member.id] = inviterId;
+
+                // Dodajemy statystyki wejść
+                if (!db.users[inviterId]) db.users[inviterId] = { joins: 0, leaves: 0 };
+                db.users[inviterId].joins += 1;
+
+                saveData(db);
             }
         } catch (err) {
-            console.error('Błąd podczas śledzenia zaproszenia:', err);
+            console.error('[Invite System] Błąd przy wejściu gracza:', err);
         }
     });
 
-    // Komenda !zaproszenia (lub !invites) do sprawdzania statystyk
+    // 4. OBSŁUGA WYJŚCIA GRACZA (Zabieranie pkt / Wyszło)
+    client.on('guildMemberRemove', async (member) => {
+        const db = loadData();
+        
+        // Sprawdzamy czy mamy zapisanego gracza w bazie "KTO GO ZAPROSIŁ"
+        if (db.invitedBy[member.id]) {
+            const inviterId = db.invitedBy[member.id];
+
+            // Nabijamy osobie zapraszającej punkt do "Wyszło"
+            if (!db.users[inviterId]) db.users[inviterId] = { joins: 0, leaves: 0 };
+            db.users[inviterId].leaves += 1;
+
+            saveData(db);
+        }
+    });
+
+    // 5. KOMENDA DO SPRAWDZANIA STATYSTYK: !invite <gracz>
     client.on('messageCreate', async (message) => {
         if (message.author.bot || !message.guild) return;
 
-        if (message.content.startsWith('!zaproszenia') || message.content.startsWith('!invites')) {
-            const targetUser = message.mentions.users.first() || message.author;
-
-            try {
-                // Pobieramy wszystkie zaproszenia z serwera
-                const guildInvites = await message.guild.invites.fetch();
-                
-                let totalRegular = 0;
-                let totalLeft = 0;
-                let totalFake = 0; // Opcjonalne (np. konta fejrowe/falszywe, tu uproszczone do statystyk)
-
-                // Filtrujemy zaproszenia należące do wybranego użytkownika
-                const userInvites = guildInvites.filter(inv => inv.inviter && inv.inviter.id === targetUser.id);
-                
-                userInvites.forEach(inv => {
-                    totalRegular += inv.uses;
-                });
-
-                // Obliczamy statystyki (zostali na serwerze vs wyszli)
-                // Discord API domyślnie pokazuje całkowitą liczbę użyć (ile osób weszło). 
-                // Aby dokładniej śledzić kto wyszedł, wymaga to bazy danych, ale podajemy profesjonalne podsumowanie:
-                const embed = new EmbedBuilder()
-                    .setAuthor({ name: `ZIOMECZKI.GG • STATYSTYKY ZAPROSZEŃ`, iconURL: message.guild.iconURL({ dynamic: true }) || null })
-                    .setTitle(`📊 Profil zaproszeń: ${targetUser.username}`)
-                    .setDescription(
-                        `> Oto szczegółowe statystyki zaproszeń użytkownika ${targetUser}:\n\n` +
-                        `🟢 **Osoby, które dołączyły:** \`${totalRegular}\`\n` +
-                        `✨ *Wszystkie linki użytkownika zostały zweryfikowane przez system.*`
-                    )
-                    .setColor('#5865F2')
-                    .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
-                    .setFooter({ text: 'System zaproszeń Ziomeczki.gg', iconURL: client.user.displayAvatarURL() })
-                    .setTimestamp();
-
-                await message.channel.send({ embeds: [embed] });
-
-            } catch (error) {
-                console.error(error);
-                await message.reply('❌ Nie udało się pobrać statystyk zaproszeń. Upewnij się, że bot ma uprawnienie **Zarządzanie serwerem** (`Manage Server`)!');
+        if (message.content.startsWith('!invite')) {
+            const args = message.content.split(' ');
+            
+            // Domyślnie sprawdzamy osobę piszącą komendę
+            let targetUser = message.author;
+            
+            // Jeśli ktoś oznaczył gracza (!invite @Gracz) lub wpisał jego ID (!invite 123456789)
+            if (args[1]) {
+                const targetId = args[1].replace(/[<@!>]/g, ''); // Czyste wyciągnięcie ID z pingowania
+                try {
+                    const fetchedUser = await client.users.fetch(targetId);
+                    if (fetchedUser) targetUser = fetchedUser;
+                } catch (e) {
+                    return message.reply({ content: '❌ Nie znalazłem takiego gracza. Upewnij się, że podałeś poprawne ID lub oznaczyłeś go poprawnie.' });
+                }
             }
+
+            // ODCZYT BAZY ZAPROSZEŃ
+            const db = loadData();
+            const userStats = db.users[targetUser.id] || { joins: 0, leaves: 0 };
+
+            // OBLICZANIE "STARYCH" ZAPROSZEŃ
+            // Zliczamy aktywne linki, jeśli ktoś robił zaproszenia zanim dodaliśmy bota
+            const guildInvites = await message.guild.invites.fetch().catch(() => new Map());
+            let baselineJoins = 0;
+            guildInvites.forEach(inv => {
+                if (inv.inviter && inv.inviter.id === targetUser.id) {
+                    baselineJoins += inv.uses;
+                }
+            });
+
+            // Ostateczna matematyka (Bot inteligentnie łączy stare zaproszenia serwera z nową bazą wyjść)
+            const finalJoins = Math.max(baselineJoins, userStats.joins);
+            const finalLeaves = userStats.leaves;
+            let stayCount = finalJoins - finalLeaves;
+
+            // Zabezpieczenie przed minusowym wynikiem
+            if (stayCount < 0) stayCount = 0;
+
+            const embed = new EmbedBuilder()
+                .setAuthor({ name: `Statystyki Zaproszeń`, iconURL: targetUser.displayAvatarURL({ dynamic: true }) })
+                .setTitle(`📈 Sprawdzasz gracza: ${targetUser.username}`)
+                .setColor('#2b2d31') // Nowoczesny ciemny kolor
+                .setThumbnail(targetUser.displayAvatarURL({ dynamic: true, size: 256 }))
+                .addFields(
+                    { name: '📥 Weszło', value: `> \`${finalJoins} osób\``, inline: true },
+                    { name: '📤 Wyszło', value: `> \`${finalLeaves} osób\``, inline: true },
+                    { name: '✅ Aktualnie na serwerze (Ważne)', value: `> **\`${stayCount} osób\`**`, inline: false }
+                )
+                .setFooter({ text: 'Side Community Ziomeczki.gg • System Zaproszeń', iconURL: message.guild.iconURL({ dynamic: true }) });
+
+            await message.reply({ embeds: [embed] });
         }
     });
 };
