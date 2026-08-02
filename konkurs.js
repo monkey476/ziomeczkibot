@@ -87,20 +87,18 @@ module.exports = (client) => {
             const parts = rawContent.split('|');
 
             if (parts.length < 2) {
-                return message.channel.send({ content: '❌ **Błędny format!** Przykład użycia:\n`!konkurs 01.08.2026 20:00 20b na Kaucja Simulator | Wbicie na discorda ZIOMECZKI.GG / https://discord.gg/yuFaCRrdMD`' });
+                return message.channel.send({ content: '❌ **Błędny format!** Przykład użycia:\n`!konkurs 01.08.2026 20:00 50b <:cash:1532691264527663104> na Kaucja Simulator | Wbicie na discorda ZIOMECZKI.GG / https://discord.gg/yuFaCRrdMD`' });
             }
 
             const leftSide = parts[0].trim().split(' ');
             const dateStr = leftSide[0]; 
             const timeStr = leftSide[1]; 
-            const prize = leftSide.slice(2).join(' '); // Nagroda zachowuje emoji bez backticków
+            const prize = leftSide.slice(2).join(' '); // Nagroda z zachowaniem emoji
 
-            const rightPart = parts.slice(1).join('|'); // Łączymy z powrotem resztę po pierwszym "|"
+            const rightPart = parts.slice(1).join('|');
             const rightSide = rightPart.split('/');
             const requirements = rightSide[0] ? rightSide[0].trim() : 'Brak wymagań';
-            
-            // Poprawione wyciąganie całego linku URL (nawet z https:// zawierającym slashe)
-            const inviteLink = rightSide.slice(1).join('/').trim();
+            const inviteLink = rightSide.slice(1).join('/').trim(); // Pełny link z https://
 
             const [day, month, year] = dateStr.split('.').map(Number);
             const [hour, minute] = timeStr.split(':').map(Number);
@@ -110,14 +108,15 @@ module.exports = (client) => {
 
             const timestampUnix = Math.floor(endTimeMs / 1000);
 
+            // Dokładny układ linijek oraz ikony jak na Twoim pierwszym wzorze
             const embed = new EmbedBuilder()
                 .setAuthor({ name: 'SIDE COMMUNITY ZIOMECZKI.GG • KONKURSY', iconURL: message.guild.iconURL({ dynamic: true }) || null })
                 .setTitle('🎉 NOWY KONKURS! 🎉')
-                .setDescription(`🎁 **Do wygrania:** ${prize} 🎁`) // Usunięto backticki, żeby emoji działało poprawnie
+                .setDescription(`🎁 **Do wygrania:** ${prize} 🎁`)
                 .setColor('#F1C40F')
                 .addFields(
                     { name: '⏳ Koniec', value: `> <t:${timestampUnix}:R> (${timeStr})`, inline: false },
-                    { name: '👑 Host', value: `> ${message.member}`, inline: false },
+                    { name: '👑 Host', value: `> ${message.member}`, inline: false }, // Wyświetla pełną nazwę/rolę hosta jak pierwotnie
                     { name: '📋 Wymagania', value: `> ${requirements}`, inline: false },
                     ...(inviteLink ? [{ name: '🔗 Discord', value: `> ${inviteLink}`, inline: false }] : []),
                     { name: '👥 Uczestnicy', value: `> \`0\``, inline: false }
