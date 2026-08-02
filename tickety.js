@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ChannelType, PermissionsBitField } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ChannelType, PermissionsBitField, AttachmentBuilder } = require('discord.js');
 
 // --- KONFIGURACJA TICKETÓW ---
 const TICKET_CATEGORY_ID = ''; // Opcjonalnie: ID kategorii na kanały ticketów
@@ -24,7 +24,7 @@ module.exports = (client) => {
                     `> Witaj w profesjonalnym centrum pomocy!\n\n` +
                     `Jeśli masz pytanie, znalazłeś błąd, chcesz dołączyć do naszego zespołu lub załatwić inną sprawę, jesteś w idealnym miejscu.\n\n` +
                     `👇 **Jak to działa?**\n` +
-                    `Rozwiń menu poniżej i wybierz kategorię, która najlepiej opisuje Twój problem. Bot automatycznie utworzy dla Ciebie **prywatny kanał**.`
+                    `Rozwiń menu poniżej i wybierz kategorię, która najlepiej opisuje Twój problem. Bot automatycznie utworzy dla Ciebie **prywatny ticket**.`
                 )
                 .setColor('#2b2d31') 
                 .setImage('https://cdn.discordapp.com/attachments/1523090420282949662/1525868085842677800/ziomeckkigg.png?ex=6a6ea824&is=6a6d56a4&hm=491057f9ba1f7aed00ea87db30d80290040d8a370b3ba9ba4c10a87294265b65&')
@@ -69,7 +69,7 @@ module.exports = (client) => {
     // 2. OBSŁUGA INTERAKCJI (TWORZENIE I ZARZĄDZANIE TICKETEM)
     client.on('interactionCreate', async (interaction) => {
         
-        // --- TWORZENIE BILETU Z MENU ---
+        // --- TWORZENIE TICKETU Z MENU ---
         if (interaction.isStringSelectMenu() && interaction.customId === 'premium_ticket_menu') {
             await interaction.deferReply({ ephemeral: true });
 
@@ -116,7 +116,7 @@ module.exports = (client) => {
                 const ticketRow = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
                         .setCustomId('close_ticket')
-                        .setLabel('Zamknij bilet')
+                        .setLabel('Zamknij ticket')
                         .setStyle(ButtonStyle.Danger)
                         .setEmoji('🔒'),
                     new ButtonBuilder()
@@ -126,18 +126,18 @@ module.exports = (client) => {
                         .setEmoji('🙋‍♂️')
                 );
 
-                await ticketChannel.send({ content: `${member} | @ticket`, embeds: [ticketEmbed], components: [ticketRow] });
+                await ticketChannel.send({ content: `${member} | @here`, embeds: [ticketEmbed], components: [ticketRow] });
                 
                 await interaction.message.edit({ components: [interaction.message.components[0]] }).catch(() => {});
                 await interaction.editReply({ content: `✅ Twój ticket został pomyślnie utworzony: ${ticketChannel}` });
 
             } catch (error) {
                 console.error('Błąd podczas tworzenia ticketu:', error);
-                await interaction.editReply({ content: '❌ Wystąpił błąd podczas tworzenia kanału. Skontaktuj się z Administracją.' });
+                await interaction.editReply({ content: '❌ Wystąpił błąd podczas tworzenia kanału. Sprawdź, czy bot ma uprawnienie "Zarządzanie Kanałami".' });
             }
         }
 
-        // --- OBSŁUGA PRZYCISKÓW W BILECIE ---
+        // --- OBSŁUGA PRZYCISKÓW W TICKETOM ---
         if (!interaction.isButton()) return;
 
         if (interaction.customId === 'claim_ticket') {
@@ -155,22 +155,45 @@ module.exports = (client) => {
         if (interaction.customId === 'close_ticket') {
             await interaction.reply({ content: '🔒 Ticket zostanie bezpowrotnie zamknięty za **5 sekund**...' });
 
-            // Wysyłanie logu na wskazany kanał
+            // Generowanie transkryptu (historii wiadomości) oraz wysyłanie logu
             if (LOG_CHANNEL_ID) {
                 const logChannel = interaction.guild.channels.cache.get(LOG_CHANNEL_ID);
                 if (logChannel) {
-                    const logEmbed = new EmbedBuilder()
-                        .setAuthor({ name: 'SIDE COMMUNITY ZIOMECZKI.GG • LOGI TICKETÓW', iconURL: interaction.guild.iconURL({ dynamic: true }) || null })
-                        .setTitle('🔒 Zamknięto ticket')
-                        .setDescription(`> Poniżej znajdują się szczegóły zamkniętego zgłoszenia.`)
-                        .addFields(
-                            { name: '📂 Nazwa kanału', value: `\`#${interaction.channel.name}\``, inline: true },
-                            { name: '👤 Zamknięty przez', value: `${interaction.user} (\`${interaction.user.id}\`)`, inline: true }
-                        )
-                        .setColor('#E74C3C')
-                        .setTimestamp();
-                    
-                    await logChannel.send({ embeds: [logEmbed] }).catch(() => {});
+                    try {
+                        // Pobieramy całą historię wiadomości z kanału
+                        let messages = await interaction.channel.messages.fetch({ limit: 100 });
+                        let sortedMessages = Array.from(messages.values()).reverse();
+
+                        let transcriptText = `--- HISTORIA ROZMOWY Z TICKETU: #${interaction.channel.name} ---\n\n`;
+                        sortedMessages.forEach(m => {
+                            let time = new Date(m.createdTimestamp).toLocaleString();
+                            transcriptText += `[${time}] ${m.author.tag}: ${m.content}\n`;
+                            if (m.attachments.size > 0) {
+                                m.attachments.forEach(att => {
+                                    transcriptText += `   [Załącznik: ${att.url}]\n`;
+                                });
+                            }
+                        });
+
+                        // Tworzymy plik tekstowy z historią
+                        const buffer = Buffer.from(transcriptText, 'utf-8');
+                        const attachment = new AttachmentBuilder(buffer, { name: `transcript-${interaction.channel.name}.txt` });
+
+                        const logEmbed = new EmbedBuilder()
+                            .setAuthor({ name: 'SIDE COMMUNITY ZIOMECZKI.GG • LOGI TICKETÓW', iconURL: interaction.guild.iconURL({ dynamic: true }) || null })
+                            .setTitle('🔒 Zamknięto ticket')
+                            .setDescription(`> Poniżej znajdują się szczegóły zamkniętego zgłoszenia oraz załączona historia wiadomości.`)
+                            .addFields(
+                                { name: '📂 Nazwa kanału', value: `\`#${interaction.channel.name}\``, inline: true },
+                                { name: '👤 Zamknięty przez', value: `${interaction.user} (\`${interaction.user.id}\`)`, inline: true }
+                            )
+                            .setColor('#E74C3C')
+                            .setTimestamp();
+                        
+                        await logChannel.send({ embeds: [logEmbed], files: [attachment] });
+                    } catch (err) {
+                        console.error('Błąd podczas generowania transkryptu ticketu:', err);
+                    }
                 }
             }
 
