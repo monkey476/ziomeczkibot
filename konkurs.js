@@ -4,7 +4,6 @@ const path = require('path');
 
 const dbPath = path.join(__dirname, 'giveaways_data.json');
 
-// Bezpieczne wczytywanie bazy konkursów
 function loadData() {
     try {
         if (!fs.existsSync(dbPath)) {
@@ -24,9 +23,8 @@ function saveData(data) {
 
 module.exports = (client) => {
 
-    // Sprawdzanie i zamykanie konkursów, które minęły (nawet po restarcie bota)
     client.once('ready', () => {
-        console.log('[Konkursy] Moduł systemowy został pomyślnie uruchomiony!');
+        console.log('[Side Community Ziomeczki.gg] Moduł konkursów został pomyślnie uruchomiony!');
         
         setInterval(async () => {
             const db = loadData();
@@ -43,7 +41,6 @@ module.exports = (client) => {
                         const message = await channel.messages.fetch(messageId).catch(() => null);
                         if (!message) continue;
 
-                        // Losowanie zwycięzcy
                         let winnerText = 'Brak uczestników spełniających warunki.';
                         if (gData.participants && gData.participants.length > 0) {
                             const winnerId = gData.participants[Math.floor(Math.random() * gData.participants.length)];
@@ -52,7 +49,7 @@ module.exports = (client) => {
 
                         const oldEmbed = message.embeds[0];
                         const endedEmbed = EmbedBuilder.from(oldEmbed)
-                            .setTitle('🎉 KONURS ROZSTRZYGNIĘTY! 🎉')
+                            .setTitle('🎉 KONKURS ROZSTRZYGNIĘTY! 🎉')
                             .setColor('#E74C3C')
                             .addFields({ name: '🏆 Wynik', value: `> **${winnerText}**`, inline: false });
 
@@ -73,10 +70,9 @@ module.exports = (client) => {
                     }
                 }
             }
-        }, 10 * 1000); // Sprawdza co 10 sekund
+        }, 10 * 1000);
     });
 
-    // Obsługa komendy !konkurs Data Godzina Nagroda | Wymagania / Link
     client.on('messageCreate', async (message) => {
         if (message.author.bot || !message.guild) return;
 
@@ -85,10 +81,8 @@ module.exports = (client) => {
                 return message.reply({ content: '❌ Nie masz uprawnień Administratora do tworzenia konkursów!', ephemeral: true });
             }
 
-            // Usunięcie wiadomości z komendą
             await message.delete().catch(() => {});
 
-            // Parsowanie argumentów: !konkurs 01.08.2026 20:00 20b na Kaucja Simulator | Wymagania / Link
             const rawContent = message.content.replace('!konkurs', '').trim();
             const parts = rawContent.split('|');
 
@@ -96,25 +90,22 @@ module.exports = (client) => {
                 return message.channel.send({ content: '❌ **Błędny format!** Przykład użycia:\n`!konkurs 01.08.2026 20:00 20b na Kaucja Simulator | Wbicie na discorda ZIOMECZKI.GG / https://discord.gg/yuFaCRrdMD`' });
             }
 
-            const leftSide = parts[0].trim().split(' '); // [Data, Godzina, Nagroda...]
-            const dateStr = leftSide[0]; // 01.08.2026
-            const timeStr = leftSide[1]; // 20:00
-            const prize = leftSide.slice(2).join(' '); // 20b na Kaucja Simulator
+            const leftSide = parts[0].trim().split(' ');
+            const dateStr = leftSide[0];
+            const timeStr = leftSide[1];
+            const prize = leftSide.slice(2).join(' ');
 
-            const rightSide = parts[1].split('/'); // [Wymagania, Link]
-            const requirements = rightSide[0] ? rightSide[0].trim() 'Brak wymagań';
+            const rightSide = parts[1].split('/');
+            const requirements = rightSide[0] ? rightSide[0].trim() : 'Brak wymagań';
             const inviteLink = rightSide[1] ? rightSide[1].trim() : '';
 
-            // Obliczanie czasu końca
             const [day, month, year] = dateStr.split('.').map(Number);
             const [hour, minute] = timeStr.split(':').map(Number);
             const endDate = new Date(year, month - 1, day, hour, minute);
             const endTimeMs = endDate.getTime();
 
-            // Formatowanie wyświetlania czasu
             const timestampUnix = Math.floor(endDate.getTime() / 1000);
 
-            // Wygląd embeda dokładnie jak na załączonym screenie
             const embed = new EmbedBuilder()
                 .setAuthor({ name: 'SIDE COMMUNITY ZIOMECZKI.GG • KONKURSY', iconURL: message.guild.iconURL({ dynamic: true }) || null })
                 .setTitle('🎉 NOWY KONKURS! 🎉')
@@ -140,7 +131,6 @@ module.exports = (client) => {
 
             const sentMessage = await message.channel.send({ embeds: [embed], components: [row] });
 
-            // Zapisz konkurs do bazy JSON
             const db = loadData();
             db.giveaways[sentMessage.id] = {
                 channelId: message.channel.id,
@@ -152,7 +142,6 @@ module.exports = (client) => {
         }
     });
 
-    // Obsługa kliknięcia w przycisk "Weź udział"
     client.on('interactionCreate', async (interaction) => {
         if (!interaction.isButton() || interaction.customId !== 'join_giveaway') return;
 
@@ -166,31 +155,24 @@ module.exports = (client) => {
         const userId = interaction.user.id;
 
         if (gData.participants.includes(userId)) {
-            // Wypisanie się z konkursu (opcjonalnie, lub info że już bierze udział)
             gData.participants = gData.participants.filter(id => id !== userId);
             saveData(db);
-
-            // Aktualizujemy licznik w embedzie
             await updateEmbedParticipants(interaction.message, gData.participants.length);
             return interaction.reply({ content: '❌ Pomyślnie wypisano Cię z konkursu.', ephemeral: true });
         } else {
-            // Zapisanie do konkursu
             gData.participants.push(userId);
             saveData(db);
-
             await updateEmbedParticipants(interaction.message, gData.participants.length);
             return interaction.reply({ content: '✅ **Sukces!** Bierzesz udział w konkursie. Powodzenia!', ephemeral: true });
         }
     });
 };
 
-// Pomocnicza funkcja do aktualizowania licznika uczestników na żywo w wiadomości
 async function updateEmbedParticipants(message, count) {
     try {
         const oldEmbed = message.embeds[0];
         const newEmbed = EmbedBuilder.from(oldEmbed);
         
-        // Znajdujemy pole "Uczestnicy" i podmieniamy wartość
         const fields = newEmbed.data.fields;
         for (let field of fields) {
             if (field.name.includes('Uczestnicy')) {
