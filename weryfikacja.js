@@ -39,36 +39,51 @@ module.exports = (client) => {
 
     client.on('interactionCreate', async (interaction) => {
         if (!interaction.isButton()) return;
+        
         if (interaction.customId === 'verify_user') {
             try {
+                // Od razu łapiemy interakcję, żeby nie wygasła
                 await interaction.deferReply({ ephemeral: true });
+
                 const member = interaction.member;
-                const verifiedRole = interaction.guild.roles.cache.get(VERIFIED_ROLE_ID);
-                const unverifiedRole = interaction.guild.roles.cache.get(UNVERIFIED_ROLE_ID);
+                const guild = interaction.guild;
+                
+                // Fetchujemy role, żeby upewnić się, że nie ma problemu z cachem (pamięcią) Discorda
+                const verifiedRole = await guild.roles.fetch(VERIFIED_ROLE_ID).catch(() => null);
+                const unverifiedRole = await guild.roles.fetch(UNVERIFIED_ROLE_ID).catch(() => null);
                 
                 if (!verifiedRole) {
-                    return interaction.editReply({ content: '❌ **Błąd Krytyczny:** Rola `Zweryfikowany` nie istnieje na serwerze!' });
+                    return interaction.editReply({ content: `❌ **Błąd:** Nie znalazłem roli o ID \`${VERIFIED_ROLE_ID}\`. Czy na pewno istnieje?` });
                 }
 
                 if (member.roles.cache.has(VERIFIED_ROLE_ID)) {
-                    return interaction.editReply({ content: '⚠️ Jesteś już zweryfikowany!' });
+                    return interaction.editReply({ content: '⚠️ Jesteś już zweryfikowany i masz dostęp do serwera!' });
                 }
 
+                // Próbujemy dodać rolę zweryfikowanego
                 await member.roles.add(verifiedRole);
+                
+                // Próbujemy usunąć rolę niezweryfikowanego, jeśli ją posiada
                 if (unverifiedRole && member.roles.cache.has(UNVERIFIED_ROLE_ID)) {
                     await member.roles.remove(unverifiedRole);
                 }
                 
                 const successEmbed = new EmbedBuilder()
                     .setTitle('🎉 Sukces!')
-                    .setDescription('Pomyślnie zweryfikowano! Otrzymałeś pełny dostęp do serwera.')
+                    .setDescription('Pomyślnie zweryfikowano! Rola `Niezweryfikowany` została zdjęta. Otrzymałeś pełny dostęp do serwera.')
                     .setColor('#2ECC71');
 
                 await interaction.editReply({ embeds: [successEmbed] });
 
             } catch (error) {
                 console.error('Błąd podczas weryfikacji:', error);
-                await interaction.editReply({ content: '❌ **Wystąpił błąd podczas nadawania ról!** Upewnij się, że rola bota jest WYŻEJ w hierarchii.' }).catch(() => {});
+                
+                // Precyzyjna wiadomość o błędzie dla Ciebie
+                await interaction.editReply({ 
+                    content: `❌ **BŁĄD SYSTEMU:** Discord zablokował akcję nadania/zabrania roli.\n\n` +
+                             `**Szczegóły błędu od Discorda:** \`${error.message}\`\n\n` +
+                             `👉 **Rozwiązanie:** Wejdź w Ustawienia Serwera -> Role i przesuń rolę bota **WYŻEJ** niż rola "Gracz" i "Niezweryfikowany"! Upewnij się też, że bot ma uprawnienie "Zarządzanie Rolami".` 
+                }).catch(() => {});
             }
         }
     });
