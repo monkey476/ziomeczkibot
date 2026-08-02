@@ -60,7 +60,8 @@ client.once('ready', () => {
     require('./invite.js')(client);
     require('./lobby.js')(client);
     require('./role.js')(client);
-    require('./info.js')(client); 
+    require('./info.js')(client);
+    require('./funkcje.js')(client);
 });
 
 // Logowanie za pomocą zmiennej środowiskowej DISCORD_TOKEN
