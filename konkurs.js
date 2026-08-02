@@ -26,9 +26,10 @@ module.exports = (client) => {
     client.once('ready', () => {
         console.log('[Side Community Ziomeczki.gg] Moduł konkursów został pomyślnie uruchomiony!');
         
+        // Pętla sprawdzająca zakończenie konkursów
         setInterval(async () => {
             const db = loadData();
-            const now = new Date().getTime();
+            const now = Date.now();
 
             for (const [messageId, gData] of Object.entries(db.giveaways)) {
                 if (!gData.ended && now >= gData.endTime) {
@@ -91,20 +92,23 @@ module.exports = (client) => {
             }
 
             const leftSide = parts[0].trim().split(' ');
-            const dateStr = leftSide[0];
-            const timeStr = leftSide[1];
+            const dateStr = leftSide[0]; // np. 01.08.2026
+            const timeStr = leftSide[1]; // np. 20:00
             const prize = leftSide.slice(2).join(' ');
 
             const rightSide = parts[1].split('/');
             const requirements = rightSide[0] ? rightSide[0].trim() : 'Brak wymagań';
             const inviteLink = rightSide[1] ? rightSide[1].trim() : '';
 
+            // Prawidłowe parsowanie daty DD.MM.YYYY HH:MM
             const [day, month, year] = dateStr.split('.').map(Number);
             const [hour, minute] = timeStr.split(':').map(Number);
-            const endDate = new Date(year, month - 1, day, hour, minute);
+            
+            // Tworzymy datę (miesiące w JS są od 0 do 11)
+            const endDate = new Date(year, month - 1, day, hour, minute, 0);
             const endTimeMs = endDate.getTime();
 
-            const timestampUnix = Math.floor(endDate.getTime() / 1000);
+            const timestampUnix = Math.floor(endTimeMs / 1000);
 
             const embed = new EmbedBuilder()
                 .setAuthor({ name: 'SIDE COMMUNITY ZIOMECZKI.GG • KONKURSY', iconURL: message.guild.iconURL({ dynamic: true }) || null })
@@ -148,11 +152,17 @@ module.exports = (client) => {
         const db = loadData();
         const gData = db.giveaways[interaction.message.id];
 
-        if (!gData || gData.ended) {
+        if (!gData) {
+            return interaction.reply({ content: '❌ Nie znaleziono danych tego konkursu w bazie (prawdopodobnie bot był restartowany przed jego utworzeniem). Stwórz nowy konkurs.', ephemeral: true });
+        }
+
+        if (gData.ended || Date.now() >= gData.endTime) {
             return interaction.reply({ content: '❌ Ten konkurs już się zakończył!', ephemeral: true });
         }
 
         const userId = interaction.user.id;
+
+        if (!gData.participants) gData.participants = [];
 
         if (gData.participants.includes(userId)) {
             gData.participants = gData.participants.filter(id => id !== userId);
