@@ -93,7 +93,7 @@ module.exports = (client) => {
 
             const existingChannel = guild.channels.cache.find(c => c.name === `${categoryName}-${member.user.username.toLowerCase()}`);
             if (existingChannel) {
-                return interaction.editReply({ content: `❌ Posiadasz już otwarty bilet w tej kategorii: ${existingChannel}` });
+                return interaction.editReply({ content: `❌ Posiadasz już otwarty ticket w tej kategorii: ${existingChannel}` });
             }
 
             try {
@@ -122,7 +122,7 @@ module.exports = (client) => {
                 const ticketRow = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
                         .setCustomId('close_ticket')
-                        .setLabel('Zamknij bilet')
+                        .setLabel('Zamknij ticket')
                         .setStyle(ButtonStyle.Danger)
                         .setEmoji('🔒'),
                     new ButtonBuilder()
@@ -132,15 +132,15 @@ module.exports = (client) => {
                         .setEmoji('🙋‍♂️')
                 );
 
-                await ticketChannel.send({ content: `${member} | @here`, embeds: [ticketEmbed], components: [ticketRow] });
+                await ticketChannel.send({ content: `${member} | @`, embeds: [ticketEmbed], components: [ticketRow] });
                 
                 // Czasami resetowanie menu powoduje błąd API, zabezpieczamy to catch'em
                 await interaction.message.edit({ components: [interaction.message.components[0]] }).catch(() => {});
-                await interaction.editReply({ content: `✅ Twój bilet został pomyślnie utworzony: ${ticketChannel}` });
+                await interaction.editReply({ content: `✅ Twój ticket został pomyślnie utworzony: ${ticketChannel}` });
 
             } catch (error) {
                 console.error('Błąd podczas tworzenia ticketu:', error);
-                await interaction.editReply({ content: '❌ Wystąpił błąd podczas tworzenia kanału. Sprawdź, czy bot ma uprawnienie "Zarządzanie Kanałami".' });
+                await interaction.editReply({ content: '❌ Wystąpił błąd podczas tworzenia kanału. Zgłoś się do Administracji".' });
             }
         }
 
@@ -149,24 +149,24 @@ module.exports = (client) => {
 
         if (interaction.customId === 'claim_ticket') {
             if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
-                return interaction.reply({ content: '❌ Tylko administracja może przejmować bilety!', ephemeral: true });
+                return interaction.reply({ content: '❌ Tylko administracja może przejmować tickety!', ephemeral: true });
             }
 
             const embed = EmbedBuilder.from(interaction.message.embeds[0]);
             embed.addFields({ name: '🛠️ Bilet obsługiwany przez:', value: `${interaction.user}`, inline: false });
             
             await interaction.update({ embeds: [embed] });
-            await interaction.followUp({ content: `✅ Bilet został przejęty przez ${interaction.user}.` });
+            await interaction.followUp({ content: `✅ Ticket został przejęty przez ${interaction.user}.` });
         }
 
         if (interaction.customId === 'close_ticket') {
-            await interaction.reply({ content: '🔒 Bilet zostanie bezpowrotnie zamknięty za **5 sekund**...' });
+            await interaction.reply({ content: '🔒 Ticket zostanie bezpowrotnie zamknięty za **5 sekund**...' });
 
             if (LOG_CHANNEL_ID) {
                 const logChannel = interaction.guild.channels.cache.get(LOG_CHANNEL_ID);
                 if (logChannel) {
                     const logEmbed = new EmbedBuilder()
-                        .setTitle('🔒 ZAMKNIĘTO BILET')
+                        .setTitle('🔒 ZAMKNIĘTO TICKET')
                         .setDescription(`> **Kanał:** #${interaction.channel.name}\n> **Zamknięty przez:** ${interaction.user}`)
                         .setColor('#E74C3C')
                         .setTimestamp();
