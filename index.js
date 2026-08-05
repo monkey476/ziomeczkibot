@@ -59,6 +59,7 @@ client.once('ready', () => {
     require('./ostatnia-litera.js')(client);
     require('./invite.js')(client);
     require('./lobby.js')(client);
+    require('./musico.js')(client);
     require('./role.js')(client);
     require('./info.js')(client);
     require('./funkcje.js')(client);
