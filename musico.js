@@ -1,11 +1,10 @@
 const { EmbedBuilder } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
-const play = require('play-dl');
 
 module.exports = (client) => {
 
     client.once('ready', () => {
-        console.log('[Side Community Ziomeczki.gg] Moduł muzyczny (musico.js) z komendą !play został uruchomiony!');
+        console.log('[Side Community Ziomeczki.gg] Moduł muzyczny (musico.js) został uruchomiony!');
     });
 
     client.on('messageCreate', async (message) => {
@@ -22,14 +21,10 @@ module.exports = (client) => {
             }
 
             if (!url) {
-                return message.reply({ content: '❌ **Błędny format!** Użyj: `!play <link_youtube>`' });
+                return message.reply({ content: '❌ **Błędny format!** Użyj: `!play <bezpośredni_link_do_pliku_mp3>`' });
             }
 
-            if (!url.includes('youtube.com') && !url.includes('youtu.be')) {
-                return message.reply({ content: '❌ Podaj poprawny link do filmu na YouTube!' });
-            }
-
-            const loadingMsg = await message.reply({ content: '⏳ Przetwarzanie linku i dołączanie do kanału...' });
+            const loadingMsg = await message.reply({ content: '⏳ Łączenie z kanałem i odtwarzanie...' });
 
             try {
                 const connection = joinVoiceChannel({
@@ -38,26 +33,22 @@ module.exports = (client) => {
                     adapterCreator: message.guild.voiceAdapterCreator,
                 });
 
-                const stream = await play.stream(url);
-                const resource = createAudioResource(stream.stream, { inputType: stream.type });
+                // Tworzenie odtwarzacza bezpośrednio z podanego linku do pliku audio
+                const resource = createAudioResource(url);
                 const player = createAudioPlayer();
 
                 player.play(resource);
                 connection.subscribe(player);
 
-                const videoInfo = await play.video_info(url);
-                const video = videoInfo.video_details;
-
                 const embed = new EmbedBuilder()
                     .setAuthor({ name: 'SIDE COMMUNITY ZIOMECZKI.GG • ODTWARZACZ', iconURL: message.guild.iconURL({ dynamic: true }) || null })
-                    .setTitle('🎶 Odtwarzam teraz:')
-                    .setDescription(`**[${video.title}](${video.url})**`)
+                    .setTitle('🎶 Odtwarzam utwór z linku:')
+                    .setDescription(`[Kliknij, aby otworzyć źródło](${url})`)
                     .setColor('#9B59B6')
                     .addFields(
                         { name: '👤 Zlecone przez:', value: `> ${message.author}`, inline: true },
                         { name: '🔊 Kanał:', value: `> <#${voiceChannel.id}>`, inline: true }
                     )
-                    .setThumbnail(video.thumbnails[0].url)
                     .setFooter({ text: 'Życzymy miłego słuchania!', iconURL: client.user.displayAvatarURL() });
 
                 await loadingMsg.edit({ content: null, embeds: [embed] });
@@ -68,7 +59,7 @@ module.exports = (client) => {
 
             } catch (error) {
                 console.error('[Musico] Błąd odtwarzania:', error);
-                await loadingMsg.edit({ content: '❌ Wystąpił błąd podczas próby odtworzenia utworu. Upewnij się, że hosting obsługuje pakiety głosowe.' });
+                await loadingMsg.edit({ content: '❌ Wystąpił błąd. Upewnij się, że podany link prowadzi bezpośrednio do pliku dźwiękowego (np. MP3).' });
             }
         }
     });
