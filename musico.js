@@ -4,91 +4,78 @@ const play = require('play-dl');
 
 module.exports = (client) => {
 
-    client.once('ready', async () => {
-        console.log('[Side Community Ziomeczki.gg] Moduł muzyczny (musico.js) został pomyślnie uruchomiony!');
-        
-        // Automatyczna rejestracja komendy /play
-        try {
-            await client.application.commands.create({
-                name: 'play',
-                description: 'Odtwarza audio z filmu na YouTube na Twoim kanale głosowym',
-                options: [
-                    {
-                        name: 'link',
-                        type: 3, // 3 oznacza wartość typu STRING
-                        description: 'Wklej link do filmu na YouTube',
-                        required: true
-                    }
-                ]
-            });
-        } catch (err) {
-            console.error('[Side Community Ziomeczki.gg] Błąd podczas rejestracji komendy /play:', err);
-        }
+    client.once('ready', () => {
+        console.log('[Side Community Ziomeczki.gg] Moduł muzyczny (musico.js) z komendą !play został uruchomiony!');
     });
 
-    client.on('interactionCreate', async (interaction) => {
-        // Ignorujemy interakcje, które nie są komendami /play
-        if (!interaction.isChatInputCommand() || interaction.commandName !== 'play') return;
+    client.on('messageCreate', async (message) => {
+        if (message.author.bot || !message.guild) return;
 
-        const url = interaction.options.getString('link');
-        const member = interaction.member;
-        const voiceChannel = member.voice.channel;
+        if (message.content.startsWith('!play')) {
+            const args = message.content.trim().split(' ');
+            const url = args[1]; // Pobiera link wpisany po spacji
 
-        // Sprawdzamy, czy gracz znajduje się na kanale głosowym
-        if (!voiceChannel) {
-            return interaction.reply({ content: '❌ Musisz być połączony z kanałem głosowym, aby użyć tej komendy!', ephemeral: true });
-        }
+            const voiceChannel = message.member.voice.channel;
 
-        // Wydłużamy czas na odpowiedź, bo pobieranie danych z YT może zająć więcej niż 3 sekundy
-        await interaction.deferReply();
-
-        try {
-            // Walidacja czy to na pewno link do YT
-            if (!url.includes('youtube.com') && !url.includes('youtu.be')) {
-                return interaction.editReply({ content: '❌ Podaj poprawny link do YouTube!' });
+            if (!voiceChannel) {
+                return message.reply({ content: '❌ Musisz być połączony z kanałem głosowym, aby użyć tej komendy!' });
             }
 
-            // Tworzenie połączenia z kanałem głosowym gracza
-            const connection = joinVoiceChannel({
-                channelId: voiceChannel.id,
-                guildId: interaction.guild.id,
-                adapterCreator: interaction.guild.voiceAdapterCreator,
-            });
+            if (!url) {
+                return message.reply({ content: '❌ **Błędny format!** Użyj: `!play <link_youtube>`' });
+            }
 
-            // Pobieranie streamu i tworzenie odtwarzacza
-            const stream = await play.stream(url);
-            const resource = createAudioResource(stream.stream, { inputType: stream.type });
-            const player = createAudioPlayer();
+            if (!url.includes('youtube.com') && !url.includes('youtu.be')) {
+                return message.reply({ content: '❌ Podaj poprawny link do filmu na YouTube!' });
+            }
 
-            player.play(resource);
-            connection.subscribe(player);
+            // Wysyłamy informację o ładowaniu, bo pobieranie z YT czasem zajmuje parę sekund
+            const loadingMsg = await message.reply({ content: '⏳ Przetwarzanie linku i dołączanie do kanału...' });
 
-            // Pobieranie informacji o filmie, żeby ładnie je wyświetlić w embedzie
-            const videoInfo = await play.video_info(url);
-            const video = videoInfo.video_details;
+            try {
+                // Tworzenie połączenia z kanałem głosowym gracza
+                const connection = joinVoiceChannel({
+                    channelId: voiceChannel.id,
+                    guildId: message.guild.id,
+                    adapterCreator: message.guild.voiceAdapterCreator,
+                });
 
-            const embed = new EmbedBuilder()
-                .setAuthor({ name: 'SIDE COMMUNITY ZIOMECZKI.GG • ODTWARZACZ', iconURL: interaction.guild.iconURL({ dynamic: true }) || null })
-                .setTitle('🎶 Odtwarzam teraz:')
-                .setDescription(`**[${video.title}](${video.url})**`)
-                .setColor('#9B59B6')
-                .addFields(
-                    { name: '👤 Zlecone przez:', value: `> ${interaction.user}`, inline: true },
-                    { name: '🔊 Kanał:', value: `> <#${voiceChannel.id}>`, inline: true }
-                )
-                .setThumbnail(video.thumbnails[0].url)
-                .setFooter({ text: 'Życzymy miłego słuchania!', iconURL: client.user.displayAvatarURL() });
+                // Pobieranie strumienia i tworzenie odtwarzacza
+                const stream = await play.stream(url);
+                const resource = createAudioResource(stream.stream, { inputType: stream.type });
+                const player = createAudioPlayer();
 
-            await interaction.editReply({ embeds: [embed] });
+                player.play(resource);
+                connection.subscribe(player);
 
-            // Kiedy utwór się skończy, bot automatycznie opuszcza kanał
-            player.on(AudioPlayerStatus.Idle, () => {
-                connection.destroy();
-            });
+                // Pobieranie informacji o filmie, żeby ładnie je wyświetlić w embedzie
+                const videoInfo = await play.video_info(url);
+                const video = videoInfo.video_details;
 
-        } catch (error) {
-            console.error('[Musico] Błąd odtwarzania:', error);
-            await interaction.editReply({ content: '❌ Wystąpił błąd podczas próby odtworzenia utworu. Sprawdź, czy link jest poprawny.' });
+                const embed = new EmbedBuilder()
+                    .setAuthor({ name: 'SIDE COMMUNITY ZIOMECZKI.GG • ODTWARZACZ', iconURL: message.guild.iconURL({ dynamic: true }) || null })
+                    .setTitle('🎶 Odtwarzam teraz:')
+                    .setDescription(`**[${video.title}](${video.url})**`)
+                    .setColor('#9B59B6')
+                    .addFields(
+                        { name: '👤 Zlecone przez:', value: `> ${message.author}`, inline: true },
+                        { name: '🔊 Kanał:', value: `> <#${voiceChannel.id}>`, inline: true }
+                    )
+                    .setThumbnail(video.thumbnails[0].url)
+                    .setFooter({ text: 'Życzymy miłego słuchania!', iconURL: client.user.displayAvatarURL() });
+
+                // Zmieniamy wiadomość z "ładowaniem" na piękny embed
+                await loadingMsg.edit({ content: null, embeds: [embed] });
+
+                // Kiedy utwór się skończy, bot automatycznie opuszcza kanał
+                player.on(AudioPlayerStatus.Idle, () => {
+                    connection.destroy();
+                });
+
+            } catch (error) {
+                console.error('[Musico] Błąd odtwarzania:', error);
+                await loadingMsg.edit({ content: '❌ Wystąpił błąd podczas próby odtworzenia utworu. Sprawdź, czy link jest poprawny.' });
+            }
         }
     });
 };
