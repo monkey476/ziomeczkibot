@@ -13,7 +13,7 @@ module.exports = (client) => {
 
         if (message.content.startsWith('!play')) {
             const args = message.content.trim().split(' ');
-            const url = args[1]; // Pobiera link wpisany po spacji
+            const url = args[1];
 
             const voiceChannel = message.member.voice.channel;
 
@@ -29,18 +29,15 @@ module.exports = (client) => {
                 return message.reply({ content: '❌ Podaj poprawny link do filmu na YouTube!' });
             }
 
-            // Wysyłamy informację o ładowaniu, bo pobieranie z YT czasem zajmuje parę sekund
             const loadingMsg = await message.reply({ content: '⏳ Przetwarzanie linku i dołączanie do kanału...' });
 
             try {
-                // Tworzenie połączenia z kanałem głosowym gracza
                 const connection = joinVoiceChannel({
                     channelId: voiceChannel.id,
                     guildId: message.guild.id,
                     adapterCreator: message.guild.voiceAdapterCreator,
                 });
 
-                // Pobieranie strumienia i tworzenie odtwarzacza
                 const stream = await play.stream(url);
                 const resource = createAudioResource(stream.stream, { inputType: stream.type });
                 const player = createAudioPlayer();
@@ -48,7 +45,6 @@ module.exports = (client) => {
                 player.play(resource);
                 connection.subscribe(player);
 
-                // Pobieranie informacji o filmie, żeby ładnie je wyświetlić w embedzie
                 const videoInfo = await play.video_info(url);
                 const video = videoInfo.video_details;
 
@@ -64,17 +60,15 @@ module.exports = (client) => {
                     .setThumbnail(video.thumbnails[0].url)
                     .setFooter({ text: 'Życzymy miłego słuchania!', iconURL: client.user.displayAvatarURL() });
 
-                // Zmieniamy wiadomość z "ładowaniem" na piękny embed
                 await loadingMsg.edit({ content: null, embeds: [embed] });
 
-                // Kiedy utwór się skończy, bot automatycznie opuszcza kanał
                 player.on(AudioPlayerStatus.Idle, () => {
                     connection.destroy();
                 });
 
             } catch (error) {
                 console.error('[Musico] Błąd odtwarzania:', error);
-                await loadingMsg.edit({ content: '❌ Wystąpił błąd podczas próby odtworzenia utworu. Sprawdź, czy link jest poprawny.' });
+                await loadingMsg.edit({ content: '❌ Wystąpił błąd podczas próby odtworzenia utworu. Upewnij się, że hosting obsługuje pakiety głosowe.' });
             }
         }
     });
