@@ -7,7 +7,6 @@
   },
 "dependencies": {
     "@discordjs/voice": "^0.17.0",
-    "dotenv": "^16.4.5"
     "play-dl": "^1.9.7",
     "ffmpeg-static": "^5.2.0",
     "libsodium-wrappers": "^0.7.13",
