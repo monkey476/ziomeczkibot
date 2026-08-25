@@ -2,30 +2,25 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('
 
 module.exports = (client) => {
     const kanalPowitanID = '1291077819954364457';
-    // Ustawiamy ten ładny, jasnożółty kolorek
     const jasnyZolty = '#FFF275'; 
-
-    // Prosta pamięć podręczna dla zabezpieczenia przed spamem (jak wcześniej)
     const przywitaniaCache = {};
 
     function stworzEmbedPowitalny(member) {
-        // Obliczamy formatowaną datę dołączenia (jak wcześniej)
         const dataDolaczenia = `<t:${Math.floor(member.joinedTimestamp / 1000)}:F>`;
 
-        // Tworzymy nową, 'piękną' strukturę karty powitalnej
+        // Czysty powrót do poprzedniej wersji wyglądu
         return new EmbedBuilder()
             .setColor(jasnyZolty)
             .setAuthor({ 
-                name: `Witaj na BroBox.pl, ${member.user.username}! 👋`, 
+                name: `Witaj na BroBox.pl, ${member.user.username}!`, 
                 iconURL: member.user.displayAvatarURL({ dynamic: true }) 
             })
-            .setDescription(`Cześć <@${member.id}>! Wielka radość, że dołączyłeś. Rozgość się i czekaj z nami na wielki start serwera 2027! 🚀⛏️`)
-            .addFields(
-                // Układ pól jest teraz bardziej czytelny i profesjonalny
-                { name: '👥 **Jesteś naszym**', value: `**${member.guild.memberCount}** graczem na serwerze! 🎉`, inline: true },
-                { name: '📅 **Data dołączenia**', value: `${dataDolaczenia} ⌚`, inline: true }
-            )
             .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 512 }))
+            .setDescription(`Cześć <@${member.id}>! Super, że do nas dołączyłeś.\nRozgość się i czekaj z nami na wielki start serwera w 2027! 🚀`)
+            .addFields(
+                { name: '👥 Jesteś naszym', value: `**${member.guild.memberCount}** graczem na serwerze!`, inline: true },
+                { name: '📅 Kiedy dołączyłeś?', value: dataDolaczenia, inline: true }
+            )
             .setFooter({ 
                 text: 'BroBox.pl - Oficjalny Discord', 
                 iconURL: member.guild.iconURL({ dynamic: true })
@@ -33,18 +28,15 @@ module.exports = (client) => {
             .setTimestamp();
     }
 
-    // Funkcja tworząca dynamiczny przycisk z licznikiem (jak wcześniej)
     function stworzPrzyciskPowitalny(liczba = 0) {
         const przycisk = new ButtonBuilder()
             .setCustomId('przywitaj_gracza')
             .setLabel(`Przywitało się z nim ${liczba} użytkowników`)
-            .setEmoji('🎉') // Dodajemy emojkę dla efektu
             .setStyle(ButtonStyle.Primary);
 
         return new ActionRowBuilder().addComponents(przycisk);
     }
 
-    // 1. Prawdziwe dołączenie gracza
     client.on('guildMemberAdd', async (member) => {
         const kanal = member.guild.channels.cache.get(kanalPowitanID);
         if (!kanal) return console.log('Błąd: Nie znaleziono kanału powitań!');
@@ -55,7 +47,6 @@ module.exports = (client) => {
         kanal.send({ embeds: [embed], components: [komponenty] });
     });
 
-    // 2. Komenda !test-powitalnia
     client.on('messageCreate', async (message) => {
         if (message.content === '!test-powitalnia' && message.member.permissions.has('Administrator')) {
             const kanal = message.guild.channels.cache.get(kanalPowitanID);
@@ -64,13 +55,10 @@ module.exports = (client) => {
             const embed = stworzEmbedPowitalny(message.member);
             const komponenty = stworzPrzyciskPowitalny(0);
 
-            // Wysyłamy wiadomość z komendą testową
             kanal.send({ embeds: [embed], components: [komponenty] });
-            message.reply('✅ Wysłano estetyczne powitanie na kanał powitalny!');
         }
     });
 
-    // 3. Obsługa kliknięcia w dynamiczny przycisk (zabezpieczenie jak wcześniej)
     client.on('interactionCreate', async (interaction) => {
         if (!interaction.isButton()) return;
         
@@ -93,7 +81,6 @@ module.exports = (client) => {
             const nowaLiczba = przywitaniaCache[messageId].length;
             const noweKomponenty = stworzPrzyciskPowitalny(nowaLiczba);
 
-            // Błyskawiczna aktualizacja przycisku
             await interaction.update({ components: [noweKomponenty] });
         }
     });
