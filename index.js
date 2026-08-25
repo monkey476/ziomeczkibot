@@ -47,19 +47,7 @@ server.listen(3000, () => {
 client.once('ready', () => {
     console.log(`✅ Zalogowano pomyślnie jako: ${client.user.tag}`);
 
-     require('./konkurs.js')(client);
-     require('./report.js')(client);
-     require('./weryfikacja.js')(client);
-     require('./tickety.js')(client);
-     require('./liczenie.js')(client);
-     require('./ostatnia-litera.js')(client);
-     require('./invite.js')(client);
-     require('./lobby.js')(client);
-     require('./musico.js')(client);
-     require('./role.js')(client);
-     require('./info.js')(client);
-     require('./funkcje.js')(client);
-});
+     require('./powitalnia.js')(client);
 
 // --- DODATKOWA KOMENDA: !wyjdz ---
 client.on('messageCreate', async (message) => {
