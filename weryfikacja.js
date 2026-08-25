@@ -22,7 +22,7 @@ module.exports = (client) => {
                     `📋 **Jak się zweryfikować?**\n` +
                     `1️⃣ Kliknij zielony przycisk poniżej.\n` +
                     `2️⃣ Bot automatycznie przyzna Ci rolę gracza.\n` +
-                    `3️⃣ Otrzymasz pełen dostęp do kanałów tekstowych i głosowych! 🚀\n\n` +
+                    `3️⃣ Otrzymasz pełen dostęp do kanałów tekstowych i głosowych! \n\n` +
                     `⚠️ *W razie problemów z weryfikacją skontaktuj się z administracją.*`
                 )
                 .setFooter({ 
