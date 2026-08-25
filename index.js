@@ -46,8 +46,8 @@ server.listen(3000, () => {
 // --- URUCHOMIENIE BOTA I WSZYSTKICH MODUŁÓW ---
 client.once('ready', () => {
     console.log(`✅ Zalogowano pomyślnie jako: ${client.user.tag}`);
-
-     require('./powitalnia.js')(client);
+    require('./powitalnia.js')(client);
+}); // <--- TUTAJ BRAKOWAŁO ZAMKNIĘCIA, DODAŁEM JE
 
 // --- DODATKOWA KOMENDA: !wyjdz ---
 client.on('messageCreate', async (message) => {
