@@ -2,27 +2,30 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('
 
 module.exports = (client) => {
     const kanalPowitanID = '1291077819954364457';
+    // Ustawiamy ten ładny, jasnożółty kolorek
     const jasnyZolty = '#FFF275'; 
 
-    // Prosta pamięć podręczna (cache), żeby gracze nie mogli nabijać licznika po kilka razy
-    // Struktura: { 'ID_WIADOMOSCI': ['ID_GRACZA1', 'ID_GRACZA2'] }
+    // Prosta pamięć podręczna dla zabezpieczenia przed spamem (jak wcześniej)
     const przywitaniaCache = {};
 
     function stworzEmbedPowitalny(member) {
+        // Obliczamy formatowaną datę dołączenia (jak wcześniej)
         const dataDolaczenia = `<t:${Math.floor(member.joinedTimestamp / 1000)}:F>`;
 
+        // Tworzymy nową, 'piękną' strukturę karty powitalnej
         return new EmbedBuilder()
             .setColor(jasnyZolty)
             .setAuthor({ 
-                name: `Witaj na BroBox.pl, ${member.user.username}!`, 
+                name: `Witaj na BroBox.pl, ${member.user.username}! 👋`, 
                 iconURL: member.user.displayAvatarURL({ dynamic: true }) 
             })
-            .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 512 }))
-            .setDescription(`Cześć <@${member.id}>! Super, że do nas dołączyłeś.\nRozgość się i czekaj z nami na wielki start serwera w 2027! 🚀`)
+            .setDescription(`Cześć <@${member.id}>! Wielka radość, że dołączyłeś. Rozgość się i czekaj z nami na wielki start serwera 2027! 🚀⛏️`)
             .addFields(
-                { name: '👥 Jesteś naszym', value: `**${member.guild.memberCount}** graczem na serwerze!`, inline: true },
-                { name: '📅 Kiedy dołączyłeś?', value: dataDolaczenia, inline: true }
+                // Układ pól jest teraz bardziej czytelny i profesjonalny
+                { name: '👥 **Jesteś naszym**', value: `**${member.guild.memberCount}** graczem na serwerze! 🎉`, inline: true },
+                { name: '📅 **Data dołączenia**', value: `${dataDolaczenia} ⌚`, inline: true }
             )
+            .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 512 }))
             .setFooter({ 
                 text: 'BroBox.pl - Oficjalny Discord', 
                 iconURL: member.guild.iconURL({ dynamic: true })
@@ -30,11 +33,12 @@ module.exports = (client) => {
             .setTimestamp();
     }
 
-    // Funkcja tworząca przycisk z dynamiczną liczbą kliknięć
+    // Funkcja tworząca dynamiczny przycisk z licznikiem (jak wcześniej)
     function stworzPrzyciskPowitalny(liczba = 0) {
         const przycisk = new ButtonBuilder()
             .setCustomId('przywitaj_gracza')
             .setLabel(`Przywitało się z nim ${liczba} użytkowników`)
+            .setEmoji('🎉') // Dodajemy emojkę dla efektu
             .setStyle(ButtonStyle.Primary);
 
         return new ActionRowBuilder().addComponents(przycisk);
@@ -60,12 +64,13 @@ module.exports = (client) => {
             const embed = stworzEmbedPowitalny(message.member);
             const komponenty = stworzPrzyciskPowitalny(0);
 
+            // Wysyłamy wiadomość z komendą testową
             kanal.send({ embeds: [embed], components: [komponenty] });
-            message.reply('✅ Wysłano testowe powitanie na kanał powitalny!');
+            message.reply('✅ Wysłano estetyczne powitanie na kanał powitalny!');
         }
     });
 
-    // 3. Obsługa kliknięcia w przycisk "Przywitaj się!"
+    // 3. Obsługa kliknięcia w dynamiczny przycisk (zabezpieczenie jak wcześniej)
     client.on('interactionCreate', async (interaction) => {
         if (!interaction.isButton()) return;
         
@@ -73,12 +78,10 @@ module.exports = (client) => {
             const messageId = interaction.message.id;
             const userId = interaction.user.id;
 
-            // Tworzymy pustą listę dla tej wiadomości, jeśli ktoś klika w nią pierwszy raz
             if (!przywitaniaCache[messageId]) {
                 przywitaniaCache[messageId] = [];
             }
 
-            // Sprawdzamy, czy użytkownik już przypadkiem nie kliknął
             if (przywitaniaCache[messageId].includes(userId)) {
                 return interaction.reply({ 
                     content: 'Już przywitałeś się z tym graczem!', 
@@ -86,16 +89,11 @@ module.exports = (client) => {
                 });
             }
 
-            // Dodajemy gracza do listy
             przywitaniaCache[messageId].push(userId);
-
-            // Pobieramy nową, łączną liczbę powitań
             const nowaLiczba = przywitaniaCache[messageId].length;
-
-            // Generujemy zaktualizowany przycisk
             const noweKomponenty = stworzPrzyciskPowitalny(nowaLiczba);
 
-            // Błyskawicznie aktualizujemy wiadomość (bez wysyłania nowej na czat)
+            // Błyskawiczna aktualizacja przycisku
             await interaction.update({ components: [noweKomponenty] });
         }
     });
