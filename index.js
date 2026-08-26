@@ -48,6 +48,7 @@ client.once('ready', () => {
     console.log(`✅ Zalogowano pomyślnie jako: ${client.user.tag}`);
     require('./powitalnia.js')(client);
     require('./weryfikacja.js')(client);
+    require('./tickety.js')(client);
 }); // <--- TUTAJ BRAKOWAŁO ZAMKNIĘCIA, DODAŁEM JE
 
 // --- DODATKOWA KOMENDA: !wyjdz ---
