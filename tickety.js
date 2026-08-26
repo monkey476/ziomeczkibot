@@ -34,26 +34,41 @@ module.exports = (client) => {
                     iconURL: message.guild.iconURL({ dynamic: true })
                 });
 
-            // Tworzymy rozwijane menu (Select Menu)
+            // Tworzymy rozwijane menu ze wszystkimi nowymi kategoriami
             const menu = new StringSelectMenuBuilder()
                 .setCustomId('ticket_menu')
                 .setPlaceholder('Wybierz kategorię zgłoszenia...')
                 .addOptions(
                     new StringSelectMenuOptionBuilder()
                         .setLabel('Pomoc Ogólna')
-                        .setDescription('Masz pytanie dotyczące serwera lub problem z kontem.')
+                        .setDescription('Masz pytanie dotyczące serwera lub ogólny problem.')
                         .setEmoji('🆘')
                         .setValue('pomoc'),
                     new StringSelectMenuOptionBuilder()
+                        .setLabel('Problemy z Kontem')
+                        .setDescription('Problemy z logowaniem, hasłem lub utraconymi przedmiotami.')
+                        .setEmoji('🔑')
+                        .setValue('konto'),
+                    new StringSelectMenuOptionBuilder()
                         .setLabel('Współpraca')
                         .setDescription('Chcesz zostać naszym partnerem (YouTube, Twitch, Discord).')
-                        .setEmoji('🤝')
+                        .setEmoji('💼')
                         .setValue('wspolpraca'),
                     new StringSelectMenuOptionBuilder()
                         .setLabel('Zgłoszenie Gracza')
                         .setDescription('Ktoś łamie regulamin i chcesz to zgłosić.')
                         .setEmoji('⚠️')
-                        .setValue('zgloszenie')
+                        .setValue('zgloszenie'),
+                    new StringSelectMenuOptionBuilder()
+                        .setLabel('Odwołanie od Bana')
+                        .setDescription('Uważasz, że Twoja kara jest niesłuszna.')
+                        .setEmoji('🔨')
+                        .setValue('odwolanie'),
+                    new StringSelectMenuOptionBuilder()
+                        .setLabel('Rekrutacja')
+                        .setDescription('Chcesz dołączyć do zespołu naszego serwera.')
+                        .setEmoji('📝')
+                        .setValue('rekrutacja')
                 );
 
             const komponenty = new ActionRowBuilder().addComponents(menu);
