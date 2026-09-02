@@ -36,7 +36,6 @@ try {
      require('./tickety.js')(client);
      require('./embedy.js')(client);
      require('./powitalnia.js')(client);
-     require('./propozycje.js')(client);
      require('./weryfikacja.js')(client);
      require('./moderacja.js')(client);
 } catch (error) {
