@@ -1,7 +1,6 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 const express = require('express');
 
-// --- 1. SERWER EXPRESS (Pod Render) ---
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -13,7 +12,6 @@ app.listen(port, () => {
     console.log(`[System] Serwer HTTP uruchomiony na porcie ${port}`);
 });
 
-// --- 2. KLIENT DISCORD ---
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -28,7 +26,6 @@ client.once('ready', () => {
     console.log(`✅ Połączono z Discordem! Zalogowano jako: ${client.user.tag}`);
 });
 
-// --- 3. AUTOMATYCZNE ŁADOWANIE WSZYSTKICH MODUŁÓW ---
 const moduly = [
     'propozycje.js',
     'embedy.js',
@@ -49,7 +46,7 @@ moduly.forEach(plik => {
 });
 console.log('-------------------------');
 
-// --- 4. ANTI-SLEEP (Podtrzymywanie aktywności) ---
+// ANTI-SLEEP
 const SERVER_URL = 'https://ziomeczkibot.onrender.com';
 
 setInterval(() => {
@@ -58,7 +55,7 @@ setInterval(() => {
         .catch(err => console.error('[Anti-Sleep] Błąd pingu:', err.message));
 }, 8 * 60 * 1000); // Ping co 8 minut
 
-// --- 5. LOGOWANIE BOTA ---
+// LOGOWANIE BOTA
 client.login(process.env.TOKEN).catch(err => {
     console.error('❌ Błąd logowania do Discorda. Sprawdź zmienną TOKEN w panelu Render.', err);
 });
