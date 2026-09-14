@@ -8,7 +8,8 @@ const {
     ButtonStyle, 
     ChannelType, 
     PermissionFlagsBits,
-    EmbedBuilder
+    EmbedBuilder,
+    AttachmentBuilder // <-- DODANO DO TWORZENIA PLIKÓW TXT
 } = require('discord.js');
 
 // STANOWISKA I KONFIGURACJA
@@ -19,7 +20,7 @@ const LOGI_KANAL_ID = '1505560669326413985';
 
 const ticketCache = new Map();
 
-// Mapowanie ID z formularza na ładne nazwy do Embedów
+// Mapowanie ID z formularza na czytelne nazwy
 const fieldLabels = {
     'nick': 'Nick',
     'opis': 'Opis sytuacji',
@@ -134,82 +135,89 @@ module.exports = (client) => {
         if (!interaction.isModalSubmit()) return;
         if (!interaction.customId.startsWith('modal_')) return;
 
-        await interaction.deferReply({ ephemeral: true });
+        try {
+            await interaction.deferReply({ ephemeral: true });
 
-        const typeMap = {
-            'modal_pomoc_ogolna': 'Pomoc Ogólna',
-            'modal_problemy_konto': 'Problemy z Kontem',
-            'modal_wspolpraca': 'Współpraca',
-            'modal_zgloszenie_gracza': 'Zgłoszenie Gracza',
-            'modal_odwolanie_ban': 'Odwołanie od Bana',
-            'modal_rekrutacja': 'Rekrutacja'
-        };
+            const typeMap = {
+                'modal_pomoc_ogolna': 'Pomoc Ogólna',
+                'modal_problemy_konto': 'Problemy z Kontem',
+                'modal_wspolpraca': 'Współpraca',
+                'modal_zgloszenie_gracza': 'Zgłoszenie Gracza',
+                'modal_odwolanie_ban': 'Odwołanie od Bana',
+                'modal_rekrutacja': 'Rekrutacja'
+            };
 
-        const kategoriaNazwa = typeMap[interaction.customId] || 'Zgłoszenie';
-        const cleanUser = interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const channelName = `ticket-${cleanUser}`;
+            const kategoriaNazwa = typeMap[interaction.customId] || 'Zgłoszenie';
+            const cleanUser = interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g, '') || 'gracz';
+            const channelName = `ticket-${cleanUser}`;
 
-        const existingChannel = interaction.guild.channels.cache.find(c => c.name === channelName);
-        if (existingChannel) {
-            return interaction.editReply({ content: `❌ Posiadasz już otwarty ticket: ${existingChannel}` });
+            const existingChannel = interaction.guild.channels.cache.find(c => c.name === channelName);
+            if (existingChannel) {
+                return interaction.editReply({ content: `❌ Posiadasz już otwarty ticket: ${existingChannel}` });
+            }
+
+            const formData = [];
+            interaction.fields.fields.forEach(field => {
+                const prettyLabel = fieldLabels[field.customId] || field.customId; 
+                formData.push({ name: field.customId, label: prettyLabel, value: field.value });
+            });
+
+            const ticketChannel = await interaction.guild.channels.create({
+                name: channelName,
+                type: ChannelType.GuildText,
+                parent: KATEGORIA_ID,
+                permissionOverwrites: [
+                    { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+                    { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles, PermissionFlagsBits.EmbedLinks, PermissionFlagsBits.ReadMessageHistory] },
+                    { id: ROLA_ADMIN_ID, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles, PermissionFlagsBits.EmbedLinks, PermissionFlagsBits.ReadMessageHistory] }
+                ]
+            });
+
+            ticketCache.set(ticketChannel.id, {
+                owner: interaction.user,
+                category: kategoriaNazwa,
+                formData: formData,
+                createdAt: new Date(),
+                claimedBy: null
+            });
+
+            const ticketEmbed = new EmbedBuilder()
+                .setTitle(`🎫 BroBox.pl — ${kategoriaNazwa}`)
+                .setDescription(
+                    `Witaj <@${interaction.user.id}>!\n` +
+                    `Oto szczegóły Twojego zgłoszenia. Administracja zajmie się nim najszybciej jak to możliwe.`
+                )
+                .setColor(firmowyKolor)
+                .setFooter({ text: `Użytkownik: ${interaction.user.tag}` })
+                .setTimestamp();
+
+            formData.forEach(item => {
+                ticketEmbed.addFields({ name: `📌 ${item.label}`, value: item.value || 'Brak danych', inline: false });
+            });
+
+            const actionButtons = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('claim_ticket').setLabel('Przejmij ticket').setStyle(ButtonStyle.Success).setEmoji('📌'),
+                new ButtonBuilder().setCustomId('close_ticket').setLabel('Zamknij ticket').setStyle(ButtonStyle.Danger).setEmoji('🔒')
+            );
+
+            await ticketChannel.send({
+                content: `<@${interaction.user.id}> | <@&${ROLA_ADMIN_ID}>`,
+                embeds: [ticketEmbed],
+                components: [actionButtons]
+            });
+
+            await interaction.editReply({ content: `✅ Twój ticket został pomyślnie utworzony: ${ticketChannel}` });
+        } catch (error) {
+            console.error('❌ Błąd podczas tworzenia ticketu:', error);
+            if (interaction.deferred || interaction.replied) {
+                await interaction.editReply({ 
+                    content: '❌ Wystąpił błąd podczas tworzenia ticketu. Upewnij się, że bot ma uprawnienia do tworzenia kanałów oraz że podane ID kategorii i roli są poprawne.' 
+                }).catch(() => {});
+            }
         }
-
-        const formData = [];
-        interaction.fields.fields.forEach(field => {
-            // Przypisanie polskiej nazwy na podstawie obiektu fieldLabels z początku pliku
-            const prettyLabel = fieldLabels[field.customId] || field.customId; 
-            formData.push({ name: field.customId, label: prettyLabel, value: field.value });
-        });
-
-        const ticketChannel = await interaction.guild.channels.create({
-            name: channelName,
-            type: ChannelType.GuildText,
-            parent: KATEGORIA_ID,
-            permissionOverwrites: [
-                { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-                { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles, PermissionFlagsBits.EmbedLinks, PermissionFlagsBits.ReadMessageHistory] },
-                { id: ROLA_ADMIN_ID, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles, PermissionFlagsBits.EmbedLinks, PermissionFlagsBits.ReadMessageHistory] }
-            ]
-        });
-
-        ticketCache.set(ticketChannel.id, {
-            owner: interaction.user,
-            category: kategoriaNazwa,
-            formData: formData,
-            createdAt: new Date(),
-            claimedBy: null
-        });
-
-        const ticketEmbed = new EmbedBuilder()
-            .setTitle(`🎫 BroBox.pl — ${kategoriaNazwa}`)
-            .setDescription(
-                `Witaj <@${interaction.user.id}>!\n` +
-                `Oto szczegóły Twojego zgłoszenia. Administracja zajmie się nim najszybciej jak to możliwe.`
-            )
-            .setColor(firmowyKolor)
-            // TUTAJ ZMIENIŁEM FOOTER: Będzie wyświetlał tylko tag gracza
-            .setFooter({ text: `Użytkownik: ${interaction.user.tag}` })
-            .setTimestamp();
-
-        formData.forEach(item => {
-            ticketEmbed.addFields({ name: `📌 ${item.label}`, value: item.value || 'Brak danych', inline: false });
-        });
-
-        const actionButtons = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('claim_ticket').setLabel('Przejmij ticket').setStyle(ButtonStyle.Success).setEmoji('📌'),
-            new ButtonBuilder().setCustomId('close_ticket').setLabel('Zamknij ticket').setStyle(ButtonStyle.Danger).setEmoji('🔒')
-        );
-
-        await ticketChannel.send({
-            content: `<@${interaction.user.id}> | <@&${ROLA_ADMIN_ID}>`,
-            embeds: [ticketEmbed],
-            components: [actionButtons]
-        });
-
-        await interaction.editReply({ content: `✅ Twój ticket został pomyślnie utworzony: ${ticketChannel}` });
     });
 
-    // 4. OBSŁUGA PRZYCISKÓW (PRZEJMOWANIE I ZAMYKANIE + LOGI)
+    // 4. OBSŁUGA PRZYCISKÓW (PRZEJMOWANIE, ZAMYKANIE I TRANSKRYPTY)
     client.on('interactionCreate', async (interaction) => {
         if (!interaction.isButton()) return;
 
@@ -234,7 +242,41 @@ module.exports = (client) => {
                 return interaction.reply({ content: '❌ Nie masz uprawnień do zamknięcia tego ticketu.', ephemeral: true });
             }
 
-            await interaction.reply('🔒 Kanał zostanie zamknięty i usunięty za 5 sekund...');
+            await interaction.reply('🔒 Rozpoczęto zamykanie... Generowanie transkryptu (potrwa to kilka sekund).');
+
+            // --- GENEROWANIE TRANSKRYPTU ---
+            let allMessages = [];
+            let lastId;
+            try {
+                while (true) {
+                    const options = { limit: 100 };
+                    if (lastId) options.before = lastId;
+                    
+                    const fetched = await interaction.channel.messages.fetch(options);
+                    if (fetched.size === 0) break;
+                    
+                    allMessages.push(...fetched.values());
+                    lastId = fetched.last().id;
+                }
+            } catch (err) {
+                console.error('❌ Błąd podczas pobierania wiadomości do transkryptu:', err);
+            }
+
+            // Odwracamy kolejność, by odczytywać od najstarszych do najnowszych
+            allMessages.reverse();
+
+            const transcriptData = allMessages.map(m => {
+                const time = m.createdAt.toLocaleString('pl-PL');
+                // Jeśli wiadomość nie ma tekstu (jest Embedem albo obrazkiem), damy odpowiednią informację
+                const content = m.content || '[Wysłano Embed / Załącznik]';
+                return `[${time}] ${m.author.tag}: ${content}`;
+            }).join('\n');
+
+            const transcriptAttachment = new AttachmentBuilder(
+                Buffer.from(transcriptData, 'utf-8'), 
+                { name: `transkrypt-${interaction.channel.name}.txt` }
+            );
+            // ---------------------------------
 
             const logsChannel = interaction.guild.channels.cache.get(LOGI_KANAL_ID);
             if (logsChannel) {
@@ -242,7 +284,6 @@ module.exports = (client) => {
                     .setTitle('📜 ZAAWANSOWANE LOGI — ZAMKNIĘCIE TICKETU')
                     .setColor(firmowyKolor)
                     .addFields(
-                        // Tutaj w logach nadal przetrzymujemy pełne ID gracza
                         { name: '👤 Otwierający:', value: data ? `${data.owner.tag} (\`${data.owner.id}\`)` : 'Nieznany', inline: true },
                         { name: '🔒 Zamknięty przez:', value: `${interaction.user.tag} (\`${interaction.user.id}\`)`, inline: true },
                         { name: '📌 Przejęty przez:', value: (data && data.claimedBy) ? `${data.claimedBy.tag} (\`${data.claimedBy.id}\`)` : 'Nieprzejęty', inline: true },
@@ -261,7 +302,8 @@ module.exports = (client) => {
                 logEmbed.addFields({ name: '\u200b', value: `Nazwa kanału: \`${interaction.channel.name}\``, inline: false });
                 logEmbed.setTimestamp();
 
-                await logsChannel.send({ embeds: [logEmbed] });
+                // Wysyłamy Embed wraz z wygenerowanym plikiem transkryptu
+                await logsChannel.send({ embeds: [logEmbed], files: [transcriptAttachment] });
             }
 
             setTimeout(() => {
