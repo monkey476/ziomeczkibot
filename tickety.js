@@ -8,7 +8,8 @@ const {
     ButtonStyle, 
     ChannelType, 
     PermissionFlagsBits,
-    EmbedBuilder
+    EmbedBuilder,
+    Routes // <-- DODANE DO KOMUNIKACJI RAW API
 } = require('discord.js');
 
 // STANOWISKA I KONFIGURACJA
@@ -45,32 +46,40 @@ module.exports = (client) => {
 
             const row = new ActionRowBuilder().addComponents(selectMenu);
 
-            await message.channel.send({
-                flags: 32768, // MessageFlags.IsComponentsV2
-                components: [
-                    {
-                        type: 17, // Container
+            // WYSYŁANIE SUROWEGO PAYLOADU Z POMINIĘCIEM WALIDACJI DISCORD.JS
+            try {
+                await client.rest.post(Routes.channelMessages(message.channel.id), {
+                    body: {
+                        flags: 32768, // MessageFlags.IsComponentsV2
                         components: [
                             {
-                                type: 18, // Text Display
-                                content: "🎫 **BROBOX.PL × SYSTEM TICKETÓW**\n\nWitaj w systemie wsparcia **BroBox.pl**!\nWybierz odpowiedni typ zgłoszenia z menu poniżej."
+                                type: 17, // Container
+                                components: [
+                                    {
+                                        type: 18, // Text Display
+                                        content: "🎫 **BROBOX.PL × SYSTEM TICKETÓW**\n\nWitaj w systemie wsparcia **BroBox.pl**!\nWybierz odpowiedni typ zgłoszenia z menu poniżej."
+                                    },
+                                    {
+                                        type: 20, // NATYWNY SEPARATOR V2
+                                        divider: true,
+                                        spacing: 1
+                                    },
+                                    {
+                                        type: 18, // Text Display
+                                        content: "*Po wybraniu opcji zostaniesz poproszony o wypełnienie krótkiego formularza.*"
+                                    }
+                                ]
                             },
-                            {
-                                type: 20, // NATYWNY SEPARATOR V2
-                                divider: true,
-                                spacing: 1
-                            },
-                            {
-                                type: 18, // Text Display
-                                content: "*Po wybraniu opcji zostaniesz poproszony o wypełnienie krótkiego formularza.*"
-                            }
+                            row.toJSON()
                         ]
-                    },
-                    row.toJSON()
-                ]
-            });
-
-            if (message.deletable) message.delete().catch(() => {});
+                    }
+                });
+                
+                if (message.deletable) message.delete().catch(() => {});
+            } catch (error) {
+                console.error("Błąd podczas wysyłania Components V2:", error);
+                message.reply('❌ Błąd API: Discord odrzucił natywny komponent. Sprawdź logi w konsoli.');
+            }
         }
     });
 
@@ -185,31 +194,40 @@ module.exports = (client) => {
             new ButtonBuilder().setCustomId('close_ticket').setLabel('Zamknij ticket').setStyle(ButtonStyle.Danger).setEmoji('🔒')
         );
 
-        await ticketChannel.send({
-            content: `<@${interaction.user.id}> | <@&${ROLA_ADMIN_ID}>`,
-            flags: 32768, // MessageFlags.IsComponentsV2
-            components: [
-                {
-                    type: 17, // Container
+        // WYSYŁANIE POWITANIA DO TICKETU PRZEZ REST API
+        try {
+            await client.rest.post(Routes.channelMessages(ticketChannel.id), {
+                body: {
+                    content: `<@${interaction.user.id}> | <@&${ROLA_ADMIN_ID}>`,
+                    flags: 32768, // MessageFlags.IsComponentsV2
                     components: [
                         {
-                            type: 18, // Text Display
-                            content: `🎫 **BroBox.pl — ${kategoriaNazwa}**\n\nWitaj <@${interaction.user.id}>!\nOto szczegóły Twojego zgłoszenia. Administracja zajmie się nim najszybciej jak to możliwe.`
+                            type: 17, // Container
+                            components: [
+                                {
+                                    type: 18, // Text Display
+                                    content: `🎫 **BroBox.pl — ${kategoriaNazwa}**\n\nWitaj <@${interaction.user.id}>!\nOto szczegóły Twojego zgłoszenia. Administracja zajmie się nim najszybciej jak to możliwe.`
+                                },
+                                {
+                                    type: 20, // NATYWNY SEPARATOR V2
+                                    divider: true,
+                                    spacing: 1
+                                },
+                                {
+                                    type: 18, // Text Display
+                                    content: formTextDisplay.trim()
+                                }
+                            ]
                         },
-                        {
-                            type: 20, // NATYWNY SEPARATOR V2
-                            divider: true,
-                            spacing: 1
-                        },
-                        {
-                            type: 18, // Text Display
-                            content: formTextDisplay.trim()
-                        }
+                        actionButtons.toJSON()
                     ]
-                },
-                actionButtons.toJSON()
-            ]
-        });
+                }
+            });
+        } catch (error) {
+            console.error("Błąd podczas wysyłania powitania w tickecie:", error);
+            // Awaryjny klasyczny tekst w razie odrzucenia komponentów V2
+            await ticketChannel.send({ content: "Wystąpił błąd z załadowaniem nowoczesnego wyglądu ticketa." });
+        }
 
         await interaction.editReply({ content: `✅ Twój ticket został pomyślnie utworzony: ${ticketChannel}` });
     });
