@@ -18,6 +18,9 @@ const KATEGORIA_ID = '1494425319862436031';
 const ROLA_ADMIN_ID = '1495094192957817025';
 const LOGI_KANAL_ID = '1505560669326413985';
 
+// ESTETYCZNA KRESKA - SEPARATOR
+const KRESKA = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
+
 const ticketCache = new Map();
 
 // Mapowanie ID z formularza na czytelne nazwy
@@ -50,7 +53,7 @@ module.exports = (client) => {
                 .setTitle('🎫 BROBOX.PL × SYSTEM TICKETÓW')
                 .setDescription(
                     'Witaj w systemie wsparcia **BroBox.pl**!\n\n' +
-                    '---\n\n' +
+                    `${KRESKA}\n\n` +
                     'Wybierz odpowiedni typ zgłoszenia z menu poniżej.\n\n' +
                     '*Po wybraniu opcji zostaniesz poproszony o wypełnienie krótkiego formularza.*'
                 )
@@ -186,7 +189,7 @@ module.exports = (client) => {
                 .setTitle(`🎫 BroBox.pl — ${kategoriaNazwa}`)
                 .setDescription(
                     `Witaj <@${interaction.user.id}>!\n\n` +
-                    `---\n\n` +
+                    `${KRESKA}\n\n` +
                     `Oto szczegóły Twojego zgłoszenia. Administracja zajmie się nim najszybciej jak to możliwe.`
                 )
                 .setColor(firmowyKolor)
@@ -297,7 +300,7 @@ module.exports = (client) => {
                         { name: '📂 Kategoria:', value: data ? data.category : 'Brak danych', inline: true },
                         { name: '📅 Data otwarcia:', value: data ? `<t:${Math.floor(data.createdAt.getTime() / 1000)}:F>` : 'Brak', inline: true },
                         { name: '⏱️ Data zamknięcia:', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true },
-                        { name: '\u200b', value: '---\n**DANE Z FORMULARZA:**', inline: false }
+                        { name: KRESKA, value: '**DANE Z FORMULARZA:**', inline: false }
                     );
 
                 if (data && data.formData) {
@@ -306,7 +309,7 @@ module.exports = (client) => {
                     });
                 }
 
-                logEmbed.addFields({ name: '\u200b', value: `---\nNazwa kanału: \`${interaction.channel.name}\``, inline: false });
+                logEmbed.addFields({ name: KRESKA, value: `Nazwa kanału: \`${interaction.channel.name}\``, inline: false });
                 logEmbed.setTimestamp();
 
                 await logsChannel.send({ embeds: [logEmbed], files: [transcriptAttachment] });
