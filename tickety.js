@@ -9,7 +9,7 @@ const {
     ChannelType, 
     PermissionFlagsBits,
     EmbedBuilder,
-    AttachmentBuilder // <-- DODANO DO TWORZENIA PLIKÓW TXT
+    AttachmentBuilder
 } = require('discord.js');
 
 // STANOWISKA I KONFIGURACJA
@@ -50,6 +50,7 @@ module.exports = (client) => {
                 .setTitle('🎫 BROBOX.PL × SYSTEM TICKETÓW')
                 .setDescription(
                     'Witaj w systemie wsparcia **BroBox.pl**!\n' +
+                    '───────────────────────────────────\n' +
                     'Wybierz odpowiedni typ zgłoszenia z menu poniżej.\n\n' +
                     '*Po wybraniu opcji zostaniesz poproszony o wypełnienie krótkiego formularza.*'
                 )
@@ -185,6 +186,7 @@ module.exports = (client) => {
                 .setTitle(`🎫 BroBox.pl — ${kategoriaNazwa}`)
                 .setDescription(
                     `Witaj <@${interaction.user.id}>!\n` +
+                    `───────────────────────────────────\n` +
                     `Oto szczegóły Twojego zgłoszenia. Administracja zajmie się nim najszybciej jak to możliwe.`
                 )
                 .setColor(firmowyKolor)
@@ -262,18 +264,23 @@ module.exports = (client) => {
                 console.error('❌ Błąd podczas pobierania wiadomości do transkryptu:', err);
             }
 
-            // Odwracamy kolejność, by odczytywać od najstarszych do najnowszych
             allMessages.reverse();
 
-            const transcriptData = allMessages.map(m => {
+            const transcriptHeader = 
+                `==================================================\n` +
+                `          BROBOX.PL — TRANSKRYPT TICKETU          \n` +
+                ` Kanał: ${interaction.channel.name}\n` +
+                ` Data zamknięcia: ${new Date().toLocaleString('pl-PL')}\n` +
+                `==================================================\n\n`;
+
+            const transcriptBody = allMessages.map(m => {
                 const time = m.createdAt.toLocaleString('pl-PL');
-                // Jeśli wiadomość nie ma tekstu (jest Embedem albo obrazkiem), damy odpowiednią informację
                 const content = m.content || '[Wysłano Embed / Załącznik]';
                 return `[${time}] ${m.author.tag}: ${content}`;
-            }).join('\n');
+            }).join('\n──────────────────────────────────────────────────\n');
 
             const transcriptAttachment = new AttachmentBuilder(
-                Buffer.from(transcriptData, 'utf-8'), 
+                Buffer.from(transcriptHeader + transcriptBody, 'utf-8'), 
                 { name: `transkrypt-${interaction.channel.name}.txt` }
             );
             // ---------------------------------
@@ -290,7 +297,7 @@ module.exports = (client) => {
                         { name: '📂 Kategoria:', value: data ? data.category : 'Brak danych', inline: true },
                         { name: '📅 Data otwarcia:', value: data ? `<t:${Math.floor(data.createdAt.getTime() / 1000)}:F>` : 'Brak', inline: true },
                         { name: '⏱️ Data zamknięcia:', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true },
-                        { name: '\u200b', value: '**DANE Z FORMULARZA:**', inline: false }
+                        { name: '───────────────────────────────────', value: '**DANE Z FORMULARZA:**', inline: false }
                     );
 
                 if (data && data.formData) {
@@ -299,10 +306,9 @@ module.exports = (client) => {
                     });
                 }
 
-                logEmbed.addFields({ name: '\u200b', value: `Nazwa kanału: \`${interaction.channel.name}\``, inline: false });
+                logEmbed.addFields({ name: '───────────────────────────────────', value: `Nazwa kanału: \`${interaction.channel.name}\``, inline: false });
                 logEmbed.setTimestamp();
 
-                // Wysyłamy Embed wraz z wygenerowanym plikiem transkryptu
                 await logsChannel.send({ embeds: [logEmbed], files: [transcriptAttachment] });
             }
 
