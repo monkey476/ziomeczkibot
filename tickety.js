@@ -49,8 +49,8 @@ module.exports = (client) => {
             const embed = new EmbedBuilder()
                 .setTitle('🎫 BROBOX.PL × SYSTEM TICKETÓW')
                 .setDescription(
-                    'Witaj w systemie wsparcia **BroBox.pl**!\n' +
-                    '───────────────────────────────────\n' +
+                    'Witaj w systemie wsparcia **BroBox.pl**!\n\n' +
+                    '---\n\n' +
                     'Wybierz odpowiedni typ zgłoszenia z menu poniżej.\n\n' +
                     '*Po wybraniu opcji zostaniesz poproszony o wypełnienie krótkiego formularza.*'
                 )
@@ -185,8 +185,8 @@ module.exports = (client) => {
             const ticketEmbed = new EmbedBuilder()
                 .setTitle(`🎫 BroBox.pl — ${kategoriaNazwa}`)
                 .setDescription(
-                    `Witaj <@${interaction.user.id}>!\n` +
-                    `───────────────────────────────────\n` +
+                    `Witaj <@${interaction.user.id}>!\n\n` +
+                    `---\n\n` +
                     `Oto szczegóły Twojego zgłoszenia. Administracja zajmie się nim najszybciej jak to możliwe.`
                 )
                 .setColor(firmowyKolor)
@@ -277,7 +277,7 @@ module.exports = (client) => {
                 const time = m.createdAt.toLocaleString('pl-PL');
                 const content = m.content || '[Wysłano Embed / Załącznik]';
                 return `[${time}] ${m.author.tag}: ${content}`;
-            }).join('\n──────────────────────────────────────────────────\n');
+            }).join('\n--------------------------------------------------\n');
 
             const transcriptAttachment = new AttachmentBuilder(
                 Buffer.from(transcriptHeader + transcriptBody, 'utf-8'), 
@@ -297,7 +297,7 @@ module.exports = (client) => {
                         { name: '📂 Kategoria:', value: data ? data.category : 'Brak danych', inline: true },
                         { name: '📅 Data otwarcia:', value: data ? `<t:${Math.floor(data.createdAt.getTime() / 1000)}:F>` : 'Brak', inline: true },
                         { name: '⏱️ Data zamknięcia:', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true },
-                        { name: '───────────────────────────────────', value: '**DANE Z FORMULARZA:**', inline: false }
+                        { name: '\u200b', value: '---\n**DANE Z FORMULARZA:**', inline: false }
                     );
 
                 if (data && data.formData) {
@@ -306,7 +306,7 @@ module.exports = (client) => {
                     });
                 }
 
-                logEmbed.addFields({ name: '───────────────────────────────────', value: `Nazwa kanału: \`${interaction.channel.name}\``, inline: false });
+                logEmbed.addFields({ name: '\u200b', value: `---\nNazwa kanału: \`${interaction.channel.name}\``, inline: false });
                 logEmbed.setTimestamp();
 
                 await logsChannel.send({ embeds: [logEmbed], files: [transcriptAttachment] });
