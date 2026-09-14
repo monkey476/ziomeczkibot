@@ -19,6 +19,21 @@ const LOGI_KANAL_ID = '1505560669326413985';
 
 const ticketCache = new Map();
 
+// Mapowanie ID z formularza na ładne nazwy do Embedów
+const fieldLabels = {
+    'nick': 'Nick',
+    'opis': 'Opis sytuacji',
+    'typ_problemu': 'Typ problemu',
+    'link': 'Link do kanału / oferty',
+    'oskarzony': 'Oskarżony gracz',
+    'powod': 'Powód i dowody',
+    'powod_bana': 'Powód bana',
+    'dlaczego': 'Dlaczego mamy zdjąć karę?',
+    'wiek': 'Wiek',
+    'rola': 'Aplikowana ranga',
+    'dlaczego_ty': 'Dlaczego akurat Ty?'
+};
+
 module.exports = (client) => {
 
     // 1. KOMENDA SETUP TICKETÓW (!setup-tickety)
@@ -35,7 +50,6 @@ module.exports = (client) => {
                 .setDescription(
                     'Witaj w systemie wsparcia **BroBox.pl**!\n' +
                     'Wybierz odpowiedni typ zgłoszenia z menu poniżej.\n\n' +
-                    '---\n\n' +
                     '*Po wybraniu opcji zostaniesz poproszony o wypełnienie krótkiego formularza.*'
                 )
                 .setColor(firmowyKolor)
@@ -142,7 +156,9 @@ module.exports = (client) => {
 
         const formData = [];
         interaction.fields.fields.forEach(field => {
-            formData.push({ name: field.customId, label: field.label, value: field.value });
+            // Przypisanie polskiej nazwy na podstawie obiektu fieldLabels z początku pliku
+            const prettyLabel = fieldLabels[field.customId] || field.customId; 
+            formData.push({ name: field.customId, label: prettyLabel, value: field.value });
         });
 
         const ticketChannel = await interaction.guild.channels.create({
@@ -168,11 +184,11 @@ module.exports = (client) => {
             .setTitle(`🎫 BroBox.pl — ${kategoriaNazwa}`)
             .setDescription(
                 `Witaj <@${interaction.user.id}>!\n` +
-                `Oto szczegóły Twojego zgłoszenia. Administracja zajmie się nim najszybciej jak to możliwe.\n\n` +
-                '---\n\n'
+                `Oto szczegóły Twojego zgłoszenia. Administracja zajmie się nim najszybciej jak to możliwe.`
             )
             .setColor(firmowyKolor)
-            .setFooter({ text: `Użytkownik: ${interaction.user.tag} (${interaction.user.id})` })
+            // TUTAJ ZMIENIŁEM FOOTER: Będzie wyświetlał tylko tag gracza
+            .setFooter({ text: `Użytkownik: ${interaction.user.tag}` })
             .setTimestamp();
 
         formData.forEach(item => {
@@ -226,13 +242,14 @@ module.exports = (client) => {
                     .setTitle('📜 ZAAWANSOWANE LOGI — ZAMKNIĘCIE TICKETU')
                     .setColor(firmowyKolor)
                     .addFields(
+                        // Tutaj w logach nadal przetrzymujemy pełne ID gracza
                         { name: '👤 Otwierający:', value: data ? `${data.owner.tag} (\`${data.owner.id}\`)` : 'Nieznany', inline: true },
                         { name: '🔒 Zamknięty przez:', value: `${interaction.user.tag} (\`${interaction.user.id}\`)`, inline: true },
                         { name: '📌 Przejęty przez:', value: (data && data.claimedBy) ? `${data.claimedBy.tag} (\`${data.claimedBy.id}\`)` : 'Nieprzejęty', inline: true },
                         { name: '📂 Kategoria:', value: data ? data.category : 'Brak danych', inline: true },
                         { name: '📅 Data otwarcia:', value: data ? `<t:${Math.floor(data.createdAt.getTime() / 1000)}:F>` : 'Brak', inline: true },
                         { name: '⏱️ Data zamknięcia:', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true },
-                        { name: '\u200b', value: '---\n**DANE Z FORMULARZA:**', inline: false }
+                        { name: '\u200b', value: '**DANE Z FORMULARZA:**', inline: false }
                     );
 
                 if (data && data.formData) {
@@ -241,7 +258,7 @@ module.exports = (client) => {
                     });
                 }
 
-                logEmbed.addFields({ name: '\u200b', value: `---\nNazwa kanału: \`${interaction.channel.name}\``, inline: false });
+                logEmbed.addFields({ name: '\u200b', value: `Nazwa kanału: \`${interaction.channel.name}\``, inline: false });
                 logEmbed.setTimestamp();
 
                 await logsChannel.send({ embeds: [logEmbed] });
