@@ -1,48 +1,58 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { 
+    ActionRowBuilder, 
+    ButtonBuilder, 
+    ButtonStyle, 
+    MessageFlags, 
+    ContainerBuilder, 
+    TextDisplayBuilder, 
+    SeparatorBuilder 
+} = require('discord.js');
 
-// Pamięć tymczasowa bota do trzymania głosów (czyści się po restarcie)
+// Pamięć tymczasowa bota do trzymania głosów oraz treści (czyści się po restarcie)
 const propozycjeDb = new Map();
 
 module.exports = (client) => {
     const KANAL_PROPOZYCJI_ID = '1482024939790925845';
     const ROLA_ADMIN_ID = '1542908457852600430';
 
-    // 1. Zdarzenie: Przechwytywanie wiadomości i tworzenie Embedu
+    // 1. Zdarzenie: Przechwytywanie wiadomości i tworzenie Panelu Components V2
     client.on('messageCreate', async (message) => {
         if (message.channel.id !== KANAL_PROPOZYCJI_ID || message.author.bot) return;
 
         const trescPropozycji = message.content;
 
-        // Błyskawiczne usunięcie oryginalnej wiadomości (z zabezpieczeniem przed błędem)
+        // Błyskawiczne usunięcie oryginalnej wiadomości
         await message.delete().catch(() => {});
 
-        const embed = new EmbedBuilder()
-            .setAuthor({ 
-                name: `Nowa propozycja od: ${message.author.tag}`, 
-                iconURL: message.author.displayAvatarURL({ dynamic: true }) 
-            })
-            .setDescription(`**Treść propozycji:**\n${trescPropozycji}`)
-            .setColor('#FEE75C') // Firmowy, żółty kolor
-            .setTimestamp()
-            .setFooter({ 
-                text: 'BroBox.pl • System Propozycji', 
-                iconURL: client.user.displayAvatarURL() 
-            });
+        // Zamiast EmbedBuilder - natywne elementy Components V2
+        const textDisplay = new TextDisplayBuilder()
+            .setText(`**Nowa propozycja od: ${message.author.tag}**\n\n**Treść propozycji:**\n${trescPropozycji}`);
 
+        const separator = new SeparatorBuilder();
+
+        // Przyciski przeniesione do panelu
         const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('prop_tak').setLabel('👍 Tak (0 - 0%)').setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId('prop_nie').setLabel('👎 Nie (0 - 0%)').setStyle(ButtonStyle.Danger),
-            new ButtonBuilder().setCustomId('prop_kto').setLabel('👥 Kto głosował').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('prop_usun').setLabel('🗑️ Usuń (Admin)').setStyle(ButtonStyle.Danger) 
+            new ButtonBuilder().setCustomId('prop_tak').setLabel('🟢 👍 Za (0 - 0%)').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId('prop_nie').setLabel('🔴 👎 Przeciw (0 - 0%)').setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId('prop_napisz').setLabel('🔵 ✏️ Napisz propozycję').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('prop_usun').setLabel('🗑️ Usuń (Admin)').setStyle(ButtonStyle.Secondary) 
         );
 
+        // Złożenie panelu w ContainerBuilder
+        const container = new ContainerBuilder().addComponents(textDisplay, separator, row);
+
         try {
-            const wyslanaWiadomosc = await message.channel.send({ embeds: [embed], components: [row] });
+            const wyslanaWiadomosc = await message.channel.send({
+                components: [container],
+                flags: [MessageFlags.IsComponentsV2] // Ustawienie odpowiedniej flagi wysyłania jako Components V2
+            });
             
-            // Rejestracja propozycji w pamięci RAM bota
+            // Rejestracja propozycji w pamięci RAM bota wraz z jej pierwotną treścią, by móc ją odświeżać
             propozycjeDb.set(wyslanaWiadomosc.id, {
                 tak: new Set(),
-                nie: new Set()
+                nie: new Set(),
+                autorTag: message.author.tag,
+                tresc: trescPropozycji
             });
         } catch (err) {
             console.error('Błąd podczas wysyłania propozycji:', err);
@@ -72,6 +82,14 @@ module.exports = (client) => {
             });
         }
 
+        // --- B. INFORMACJA - NAPISZ PROPOZYCJĘ ---
+        if (interaction.customId === 'prop_napisz') {
+            return interaction.reply({
+                content: '📝 Aby stworzyć nową propozycję, po prostu wyślij zwykłą wiadomość na tym kanale!',
+                ephemeral: true
+            });
+        }
+
         // Zabezpieczenie przed starymi propozycjami (sprzed restartu bota)
         if (!propozycjeDb.has(propId)) {
             return interaction.reply({ 
@@ -80,60 +98,52 @@ module.exports = (client) => {
             });
         }
 
-        const głosy = propozycjeDb.get(propId);
+        const danePropozycji = propozycjeDb.get(propId);
         const userId = interaction.user.id;
-
-        // --- B. PODGLĄD GŁOSUJĄCYCH ---
-        if (interaction.customId === 'prop_kto') {
-            let naTak = Array.from(głosy.tak).map(id => `<@${id}>`).join(', ');
-            let naNie = Array.from(głosy.nie).map(id => `<@${id}>`).join(', ');
-
-            // Zabezpieczenie przed limitem znaków na Discordzie (2000 znaków)
-            if (naTak.length > 900) naTak = naTak.substring(0, 900) + '... (i inni)';
-            if (naNie.length > 900) naNie = naNie.substring(0, 900) + '... (i inni)';
-
-            const tekstTak = naTak || 'Brak głosów';
-            const tekstNie = naNie || 'Brak głosów';
-
-            return interaction.reply({
-                content: `📊 **Lista głosujących:**\n\n**👍 Na TAK (${głosy.tak.size}):**\n${tekstTak}\n\n**👎 Na NIE (${głosy.nie.size}):**\n${tekstNie}`,
-                ephemeral: true
-            });
-        }
 
         // --- C. LOGIKA GŁOSOWANIA (Zmiana głosów) ---
         if (interaction.customId === 'prop_tak') {
-            if (głosy.tak.has(userId)) {
-                return interaction.reply({ content: '❌ Twój głos na **TAK** jest już oddany.', ephemeral: true });
+            if (danePropozycji.tak.has(userId)) {
+                return interaction.reply({ content: '❌ Twój głos na **ZA** jest już oddany.', ephemeral: true });
             }
-            głosy.tak.add(userId);
-            głosy.nie.delete(userId);
+            danePropozycji.tak.add(userId);
+            danePropozycji.nie.delete(userId);
         }
 
         if (interaction.customId === 'prop_nie') {
-            if (głosy.nie.has(userId)) {
-                return interaction.reply({ content: '❌ Twój głos na **NIE** jest już oddany.', ephemeral: true });
+            if (danePropozycji.nie.has(userId)) {
+                return interaction.reply({ content: '❌ Twój głos na **PRZECIW** jest już oddany.', ephemeral: true });
             }
-            głosy.nie.add(userId);
-            głosy.tak.delete(userId);
+            danePropozycji.nie.add(userId);
+            danePropozycji.tak.delete(userId);
         }
 
-        // --- D. PRZELICZANIE PROCENTÓW I AKTUALIZACJA WIDOKU ---
-        const ileTak = głosy.tak.size;
-        const ileNie = głosy.nie.size;
+        // --- D. PRZELICZANIE PROCENTÓW I AKTUALIZACJA KONTENERA ---
+        const ileTak = danePropozycji.tak.size;
+        const ileNie = danePropozycji.nie.size;
         const suma = ileTak + ileNie;
 
         const procentTak = suma === 0 ? 0 : Math.round((ileTak / suma) * 100);
         const procentNie = suma === 0 ? 0 : Math.round((ileNie / suma) * 100);
 
+        // Przebudowa zawartości panelu ze zaktualizowanymi przyciskami
+        const zaktualizowanyTekst = new TextDisplayBuilder()
+            .setText(`**Nowa propozycja od: ${danePropozycji.autorTag}**\n\n**Treść propozycji:**\n${danePropozycji.tresc}`);
+            
+        const zaktualizowanySeparator = new SeparatorBuilder();
+
         const zaktualizowanePrzyciski = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('prop_tak').setLabel(`👍 Tak (${ileTak} - ${procentTak}%)`).setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId('prop_nie').setLabel(`👎 Nie (${ileNie} - ${procentNie}%)`).setStyle(ButtonStyle.Danger),
-            new ButtonBuilder().setCustomId('prop_kto').setLabel('👥 Kto głosował').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('prop_usun').setLabel('🗑️ Usuń (Admin)').setStyle(ButtonStyle.Danger)
+            new ButtonBuilder().setCustomId('prop_tak').setLabel(`🟢 👍 Za (${ileTak} - ${procentTak}%)`).setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId('prop_nie').setLabel(`🔴 👎 Przeciw (${ileNie} - ${procentNie}%)`).setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId('prop_napisz').setLabel('🔵 ✏️ Napisz propozycję').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('prop_usun').setLabel('🗑️ Usuń (Admin)').setStyle(ButtonStyle.Secondary)
         );
 
-        // Używamy .update(), aby Discord nie krzyczał "Interakcja nie powiodła się"
-        await interaction.update({ components: [zaktualizowanePrzyciski] }).catch(console.error);
+        // Składamy zaktualizowany panel Components V2
+        const zaktualizowanyKontener = new ContainerBuilder()
+            .addComponents(zaktualizowanyTekst, zaktualizowanySeparator, zaktualizowanePrzyciski);
+
+        // Wysyłamy update całego kontenera, dzięki czemu Discord zaktualizuje i tekst, i przyciski płynnie w jednym panelu
+        await interaction.update({ components: [zaktualizowanyKontener] }).catch(console.error);
     });
 };
