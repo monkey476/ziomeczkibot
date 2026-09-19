@@ -10,207 +10,218 @@ const {
     PermissionFlagsBits
 } = require('discord.js');
 
+// =====================================================
+// BAZA PROPOZYCJI
+// =====================================================
+
 const propozycjeDb = new Map();
 
-const KANAL_PROPOZYCJI_ID =
-    '1482024939790925845';
+// =====================================================
+// KONFIGURACJA
+// =====================================================
 
-const ROLA_ADMIN_ID =
-    '1542908457852600430';
+const KANAL_PROPOZYCJI_ID = '1482024939790925845';
+const ROLA_ADMIN_ID = '1542908457852600430';
 
-const KOLOR =
-    0x5865F2;
+// 🟡 Firmowy kolor BroBox.pl
+const KOLOR = 0xFFF275;
+
+
+// =====================================================
+// SPRAWDZANIE ADMINA
+// =====================================================
 
 function isAdmin(member) {
-
     return Boolean(
-
         member?.permissions?.has(
             PermissionFlagsBits.Administrator
         ) ||
-
         member?.roles?.cache?.has(
             ROLA_ADMIN_ID
         )
-
     );
 }
 
+
+// =====================================================
+// TWORZENIE PANELU PROPOZYCJI
+// =====================================================
+
 function createProposalPanel(data) {
 
-    const total =
-        data.tak.size +
-        data.nie.size;
+    const ileTak = data.tak.size;
+    const ileNie = data.nie.size;
 
-    const takPercent =
-        total
-            ? Math.round(
-                data.tak.size /
-                total *
-                100
-            )
-            : 0;
+    const suma = ileTak + ileNie;
 
-    const niePercent =
-        total
-            ? Math.round(
-                data.nie.size /
-                total *
-                100
-            )
-            : 0;
+    const procentTak =
+        suma === 0
+            ? 0
+            : Math.round((ileTak / suma) * 100);
 
-    // =====================================================
+    const procentNie =
+        suma === 0
+            ? 0
+            : Math.round((ileNie / suma) * 100);
+
+
+    // =================================================
     // PRZYCISKI
-    // =====================================================
+    // =================================================
 
-    const buttons =
-        new ActionRowBuilder()
-            .addComponents(
+    const buttons = new ActionRowBuilder().addComponents(
 
-                new ButtonBuilder()
+        new ButtonBuilder()
+            .setCustomId('prop_tak')
+            .setLabel(`Za (${ileTak} • ${procentTak}%)`)
+            .setEmoji('👍')
+            .setStyle(ButtonStyle.Success),
 
-                    .setCustomId(
-                        'prop_tak'
-                    )
+        new ButtonBuilder()
+            .setCustomId('prop_nie')
+            .setLabel(`Przeciw (${ileNie} • ${procentNie}%)`)
+            .setEmoji('👎')
+            .setStyle(ButtonStyle.Danger),
 
-                    .setLabel(
-                        `Za (${data.tak.size} • ${takPercent}%)`
-                    )
+        new ButtonBuilder()
+            .setCustomId('prop_usun')
+            .setLabel('Usuń')
+            .setEmoji('🗑️')
+            .setStyle(ButtonStyle.Secondary)
 
-                    .setEmoji(
-                        '👍'
-                    )
+    );
 
-                    .setStyle(
-                        ButtonStyle.Success
-                    ),
 
-                new ButtonBuilder()
+    // =================================================
+    // COMPONENTS V2
+    // =================================================
 
-                    .setCustomId(
-                        'prop_nie'
-                    )
+    const container = new ContainerBuilder()
+        .setAccentColor(KOLOR)
 
-                    .setLabel(
-                        `Przeciw (${data.nie.size} • ${niePercent}%)`
-                    )
-
-                    .setEmoji(
-                        '👎'
-                    )
-
-                    .setStyle(
-                        ButtonStyle.Danger
-                    ),
-
-                new ButtonBuilder()
-
-                    .setCustomId(
-                        'prop_usun'
-                    )
-
-                    .setLabel(
-                        'Usuń'
-                    )
-
-                    .setEmoji(
-                        '🗑️'
-                    )
-
-                    .setStyle(
-                        ButtonStyle.Secondary
-                    )
-
-            );
-
-    // =====================================================
-    // PANEL COMPONENTS V2
-    // =====================================================
-
-    return new ContainerBuilder()
-
-        .setAccentColor(
-            KOLOR
-        )
+        // -------------------------------------------------
+        // NAGŁÓWEK
+        // -------------------------------------------------
 
         .addTextDisplayComponents(
 
-            new TextDisplayBuilder()
-                .setContent(
+            new TextDisplayBuilder().setContent(
+                '# 💡 Propozycja społeczności\n' +
 
-                    '# 💡 Propozycja społeczności\n' +
+                `**Autor:** <@${data.autorId}>\n` +
 
-                    `**Autor:** ${data.autorTag}\n` +
-
-                    `**Status:** 🟢 Głosowanie aktywne\n\n` +
-
-                    '## 📝 Treść propozycji\n' +
-
-                    data.tresc
-
-                )
+                '**Status:** 🟢 Głosowanie aktywne'
+            )
 
         )
+
+        // -------------------------------------------------
+        // SEPARATOR
+        // -------------------------------------------------
 
         .addSeparatorComponents(
 
             new SeparatorBuilder()
-
                 .setDivider(true)
-
                 .setSpacing(
                     SeparatorSpacingSize.Small
                 )
 
         )
 
+        // -------------------------------------------------
+        // TREŚĆ
+        // -------------------------------------------------
+
         .addTextDisplayComponents(
 
-            new TextDisplayBuilder()
-                .setContent(
-
-                    `**Głosowanie:** ${total} głosów\n` +
-
-                    `👍 Za: **${data.tak.size}** (${takPercent}%)\n` +
-
-                    `👎 Przeciw: **${data.nie.size}** (${niePercent}%)`
-
-                )
+            new TextDisplayBuilder().setContent(
+                '## 📝 Treść propozycji\n' +
+                data.tresc
+            )
 
         )
+
+        // -------------------------------------------------
+        // SEPARATOR
+        // -------------------------------------------------
 
         .addSeparatorComponents(
 
             new SeparatorBuilder()
-
                 .setDivider(true)
-
                 .setSpacing(
                     SeparatorSpacingSize.Small
                 )
 
         )
+
+        // -------------------------------------------------
+        // WYNIKI
+        // -------------------------------------------------
+
+        .addTextDisplayComponents(
+
+            new TextDisplayBuilder().setContent(
+                `### 📊 Wyniki głosowania\n\n` +
+
+                `👍 **Za:** ${ileTak} (${procentTak}%)\n` +
+
+                `👎 **Przeciw:** ${ileNie} (${procentNie}%)\n\n` +
+
+                `👥 **Łącznie głosów:** ${suma}`
+            )
+
+        )
+
+        // -------------------------------------------------
+        // SEPARATOR
+        // -------------------------------------------------
+
+        .addSeparatorComponents(
+
+            new SeparatorBuilder()
+                .setDivider(true)
+                .setSpacing(
+                    SeparatorSpacingSize.Small
+                )
+
+        )
+
+        // -------------------------------------------------
+        // PRZYCISKI
+        // -------------------------------------------------
 
         .addActionRowComponents(
             buttons
         );
+
+
+    return container;
 }
+
+
+// =====================================================
+// GŁÓWNY MODUŁ
+// =====================================================
 
 module.exports = (client) => {
 
-    // =====================================================
+
+    // =================================================
     // NOWA PROPOZYCJA
-    // =====================================================
+    // =================================================
 
     client.on(
         'messageCreate',
         async (message) => {
 
+            // Ignorowanie botów
             if (message.author.bot) {
                 return;
             }
 
+            // Tylko kanał propozycji
             if (
                 message.channel.id !==
                 KANAL_PROPOZYCJI_ID
@@ -221,40 +232,53 @@ module.exports = (client) => {
             const tresc =
                 message.content.trim();
 
+
+            // Pusta wiadomość
             if (!tresc) {
                 return;
             }
 
-            // Usunięcie wiadomości użytkownika
+
+            // =================================================
+            // USUNIĘCIE ORYGINALNEJ WIADOMOŚCI
+            // =================================================
+
             await message
                 .delete()
                 .catch(() => {});
 
+
+            // =================================================
+            // DANE PROPOZYCJI
+            // =================================================
+
             const data = {
 
-                tak:
-                    new Set(),
+                // Osobne Sety dla głosów
+                tak: new Set(),
 
-                nie:
-                    new Set(),
+                nie: new Set(),
 
-                autorTag:
-                    message.author.tag,
+                // ID autora — dzięki temu robimy prawdziwe @
+                autorId: message.author.id,
 
-                tresc:
-                    tresc
+                // Treść
+                tresc: tresc
 
             };
 
+
+            // =================================================
+            // WYSŁANIE PANELU
+            // =================================================
+
             try {
 
-                const sent =
+                const wyslanaWiadomosc =
                     await message.channel.send({
 
                         components: [
-                            createProposalPanel(
-                                data
-                            )
+                            createProposalPanel(data)
                         ],
 
                         flags:
@@ -262,15 +286,21 @@ module.exports = (client) => {
 
                     });
 
+
+                // =================================================
+                // ZAPIS DO PAMIĘCI
+                // =================================================
+
                 propozycjeDb.set(
-                    sent.id,
+                    wyslanaWiadomosc.id,
                     data
                 );
+
 
             } catch (error) {
 
                 console.error(
-                    '❌ Błąd wysyłania propozycji:',
+                    '❌ Błąd podczas wysyłania propozycji:',
                     error
                 );
 
@@ -279,9 +309,10 @@ module.exports = (client) => {
         }
     );
 
-    // =====================================================
+
+    // =================================================
     // OBSŁUGA PRZYCISKÓW
-    // =====================================================
+    // =================================================
 
     client.on(
         'interactionCreate',
@@ -291,6 +322,8 @@ module.exports = (client) => {
                 return;
             }
 
+
+            // Tylko nasze przyciski
             if (
                 !interaction.customId.startsWith(
                     'prop_'
@@ -299,11 +332,13 @@ module.exports = (client) => {
                 return;
             }
 
+
             const proposalId =
                 interaction.message.id;
 
+
             // =================================================
-            // USUWANIE
+            // USUWANIE PROPOZYCJI
             // =================================================
 
             if (
@@ -326,15 +361,21 @@ module.exports = (client) => {
                             true
 
                     });
+
                 }
 
+
+                // Usunięcie z pamięci
                 propozycjeDb.delete(
                     proposalId
                 );
 
+
+                // Usunięcie wiadomości
                 await interaction.message
                     .delete()
                     .catch(() => {});
+
 
                 return interaction.reply({
 
@@ -345,10 +386,12 @@ module.exports = (client) => {
                         true
 
                 });
+
             }
 
+
             // =================================================
-            // POBRANIE DANYCH
+            // POBRANIE PROPOZYCJI
             // =================================================
 
             const data =
@@ -356,24 +399,29 @@ module.exports = (client) => {
                     proposalId
                 );
 
+
+            // Propozycja sprzed restartu
             if (!data) {
 
                 return interaction.reply({
 
                     content:
-                        '⚠️ Ta propozycja pochodzi sprzed restartu bota. Głosowanie jest zamknięte.',
+                        '⚠️ Ta propozycja pochodzi sprzed restartu bota. Głosowanie jest już zamknięte.',
 
                     ephemeral:
                         true
 
                 });
+
             }
+
 
             const userId =
                 interaction.user.id;
 
+
             // =================================================
-            // ZA
+            // GŁOS ZA
             // =================================================
 
             if (
@@ -381,8 +429,8 @@ module.exports = (client) => {
                 'prop_tak'
             ) {
 
-                // Kliknięcie drugi raz
-                // usuwa głos
+                // Jeśli już głosował ZA,
+                // ponowne kliknięcie usuwa głos
 
                 if (
                     data.tak.has(
@@ -396,24 +444,32 @@ module.exports = (client) => {
 
                 } else {
 
+                    // Dodaj ZA
                     data.tak.add(
                         userId
                     );
 
+                    // Usuń PRZECIW
                     data.nie.delete(
                         userId
                     );
+
                 }
+
             }
 
+
             // =================================================
-            // PRZECIW
+            // GŁOS PRZECIW
             // =================================================
 
             if (
                 interaction.customId ===
                 'prop_nie'
             ) {
+
+                // Jeśli już głosował PRZECIW,
+                // ponowne kliknięcie usuwa głos
 
                 if (
                     data.nie.has(
@@ -427,15 +483,20 @@ module.exports = (client) => {
 
                 } else {
 
+                    // Dodaj PRZECIW
                     data.nie.add(
                         userId
                     );
 
+                    // Usuń ZA
                     data.tak.delete(
                         userId
                     );
+
                 }
+
             }
+
 
             // =================================================
             // AKTUALIZACJA PANELU
@@ -467,4 +528,5 @@ module.exports = (client) => {
 
         }
     );
+
 };
