@@ -1,4 +1,3 @@
-
 const {
     ActionRowBuilder,
     ButtonBuilder,
@@ -7,281 +6,465 @@ const {
     TextDisplayBuilder,
     SeparatorBuilder,
     SeparatorSpacingSize,
-    MessageFlags
+    MessageFlags,
+    PermissionFlagsBits
 } = require('discord.js');
 
-// Pamięć tymczasowa głosów.
-// Po restarcie bota głosy zostaną wyczyszczone.
 const propozycjeDb = new Map();
+
+const KANAL_PROPOZYCJI_ID =
+    '1482024939790925845';
+
+const ROLA_ADMIN_ID =
+    '1542908457852600430';
+
+const KOLOR =
+    0x5865F2;
+
+function isAdmin(member) {
+
+    return Boolean(
+
+        member?.permissions?.has(
+            PermissionFlagsBits.Administrator
+        ) ||
+
+        member?.roles?.cache?.has(
+            ROLA_ADMIN_ID
+        )
+
+    );
+}
+
+function createProposalPanel(data) {
+
+    const total =
+        data.tak.size +
+        data.nie.size;
+
+    const takPercent =
+        total
+            ? Math.round(
+                data.tak.size /
+                total *
+                100
+            )
+            : 0;
+
+    const niePercent =
+        total
+            ? Math.round(
+                data.nie.size /
+                total *
+                100
+            )
+            : 0;
+
+    // =====================================================
+    // PRZYCISKI
+    // =====================================================
+
+    const buttons =
+        new ActionRowBuilder()
+            .addComponents(
+
+                new ButtonBuilder()
+
+                    .setCustomId(
+                        'prop_tak'
+                    )
+
+                    .setLabel(
+                        `Za (${data.tak.size} • ${takPercent}%)`
+                    )
+
+                    .setEmoji(
+                        '👍'
+                    )
+
+                    .setStyle(
+                        ButtonStyle.Success
+                    ),
+
+                new ButtonBuilder()
+
+                    .setCustomId(
+                        'prop_nie'
+                    )
+
+                    .setLabel(
+                        `Przeciw (${data.nie.size} • ${niePercent}%)`
+                    )
+
+                    .setEmoji(
+                        '👎'
+                    )
+
+                    .setStyle(
+                        ButtonStyle.Danger
+                    ),
+
+                new ButtonBuilder()
+
+                    .setCustomId(
+                        'prop_usun'
+                    )
+
+                    .setLabel(
+                        'Usuń'
+                    )
+
+                    .setEmoji(
+                        '🗑️'
+                    )
+
+                    .setStyle(
+                        ButtonStyle.Secondary
+                    )
+
+            );
+
+    // =====================================================
+    // PANEL COMPONENTS V2
+    // =====================================================
+
+    return new ContainerBuilder()
+
+        .setAccentColor(
+            KOLOR
+        )
+
+        .addTextDisplayComponents(
+
+            new TextDisplayBuilder()
+                .setContent(
+
+                    '# 💡 Propozycja społeczności\n' +
+
+                    `**Autor:** ${data.autorTag}\n` +
+
+                    `**Status:** 🟢 Głosowanie aktywne\n\n` +
+
+                    '## 📝 Treść propozycji\n' +
+
+                    data.tresc
+
+                )
+
+        )
+
+        .addSeparatorComponents(
+
+            new SeparatorBuilder()
+
+                .setDivider(true)
+
+                .setSpacing(
+                    SeparatorSpacingSize.Small
+                )
+
+        )
+
+        .addTextDisplayComponents(
+
+            new TextDisplayBuilder()
+                .setContent(
+
+                    `**Głosowanie:** ${total} głosów\n` +
+
+                    `👍 Za: **${data.tak.size}** (${takPercent}%)\n` +
+
+                    `👎 Przeciw: **${data.nie.size}** (${niePercent}%)`
+
+                )
+
+        )
+
+        .addSeparatorComponents(
+
+            new SeparatorBuilder()
+
+                .setDivider(true)
+
+                .setSpacing(
+                    SeparatorSpacingSize.Small
+                )
+
+        )
+
+        .addActionRowComponents(
+            buttons
+        );
+}
 
 module.exports = (client) => {
 
-    const KANAL_PROPOZYCJI_ID = '1482024939790925845';
-    const ROLA_ADMIN_ID = '1542908457852600430';
-
     // =====================================================
-    // FUNKCJA TWORZĄCA NATYWNY PANEL COMPONENTS V2
+    // NOWA PROPOZYCJA
     // =====================================================
 
-    function stworzPanelPropozycji({
-        autorTag,
-        tresc,
-        ileTak,
-        ileNie
-    }) {
+    client.on(
+        'messageCreate',
+        async (message) => {
 
-        const suma = ileTak + ileNie;
-
-        const procentTak = suma === 0
-            ? 0
-            : Math.round((ileTak / suma) * 100);
-
-        const procentNie = suma === 0
-            ? 0
-            : Math.round((ileNie / suma) * 100);
-
-        // Prawdziwe przyciski Discorda
-        const przyciski = new ActionRowBuilder().addComponents(
-
-            new ButtonBuilder()
-                .setCustomId('prop_tak')
-                .setLabel(`Za (${ileTak} - ${procentTak}%)`)
-                .setEmoji('👍')
-                .setStyle(ButtonStyle.Success),
-
-            new ButtonBuilder()
-                .setCustomId('prop_nie')
-                .setLabel(`Przeciw (${ileNie} - ${procentNie}%)`)
-                .setEmoji('👎')
-                .setStyle(ButtonStyle.Danger),
-
-            new ButtonBuilder()
-                .setCustomId('prop_napisz')
-                .setLabel('Napisz propozycję')
-                .setEmoji('✏️')
-                .setStyle(ButtonStyle.Primary),
-
-            new ButtonBuilder()
-                .setCustomId('prop_usun')
-                .setLabel('Usuń (Admin)')
-                .setEmoji('🗑️')
-                .setStyle(ButtonStyle.Secondary)
-        );
-
-        // NATYWNY SEPARATOR DISCORDA
-        const separator = new SeparatorBuilder()
-            .setDivider(true)
-            .setSpacing(SeparatorSpacingSize.Small);
-
-        // NATYWNY PANEL COMPONENTS V2
-        const container = new ContainerBuilder()
-            .setAccentColor(0x5865F2)
-
-            .addTextDisplayComponents(
-                new TextDisplayBuilder().setContent(
-                    `# 💡 Propozycja społeczności\n\n` +
-                    `**Autor:** ${autorTag}\n\n` +
-                    `**Propozycja:**\n${tresc}\n\n` +
-                    `Głosowanie: **${suma}** głosów`
-                )
-            )
-
-            // Prawdziwa szara linia
-            .addSeparatorComponents(separator)
-
-            // Prawdziwe przyciski WEWNĄTRZ kontenera
-            .addActionRowComponents(przyciski);
-
-        return container;
-    }
-
-    // =====================================================
-    // 1. PRZECHWYTYWANIE WIADOMOŚCI
-    // =====================================================
-
-    client.on('messageCreate', async (message) => {
-
-        if (
-            message.channel.id !== KANAL_PROPOZYCJI_ID ||
-            message.author.bot
-        ) return;
-
-        const trescPropozycji = message.content.trim();
-
-        if (!trescPropozycji) return;
-
-        // Usuwamy oryginalną wiadomość użytkownika
-        await message.delete().catch(() => {});
-
-        try {
-
-            const panel = stworzPanelPropozycji({
-                autorTag: message.author.tag,
-                tresc: trescPropozycji,
-                ileTak: 0,
-                ileNie: 0
-            });
-
-            // WYSYŁANIE COMPONENTS V2
-            const wyslanaWiadomosc = await message.channel.send({
-                components: [panel],
-                flags: MessageFlags.IsComponentsV2
-            });
-
-            // Zapis propozycji
-            propozycjeDb.set(wyslanaWiadomosc.id, {
-                tak: new Set(),
-                nie: new Set(),
-                autorTag: message.author.tag,
-                tresc: trescPropozycji
-            });
-
-        } catch (err) {
-
-            console.error(
-                '❌ Błąd podczas wysyłania propozycji:',
-                err
-            );
-
-        }
-
-    });
-
-    // =====================================================
-    // 2. OBSŁUGA PRZYCISKÓW
-    // =====================================================
-
-    client.on('interactionCreate', async (interaction) => {
-
-        if (
-            !interaction.isButton() ||
-            !interaction.customId.startsWith('prop_')
-        ) return;
-
-        const propId = interaction.message.id;
-
-        // =================================================
-        // USUWANIE PROPOZYCJI
-        // =================================================
-
-        if (interaction.customId === 'prop_usun') {
+            if (message.author.bot) {
+                return;
+            }
 
             if (
-                !interaction.member.roles.cache.has(ROLA_ADMIN_ID) &&
-                !interaction.member.permissions.has('Administrator')
+                message.channel.id !==
+                KANAL_PROPOZYCJI_ID
             ) {
-                return interaction.reply({
-                    content: '❌ Brak uprawnień. Tylko administracja może usuwać propozycje.',
-                    ephemeral: true
-                });
+                return;
             }
 
-            propozycjeDb.delete(propId);
+            const tresc =
+                message.content.trim();
 
-            await interaction.message.delete().catch(() => {});
-
-            return interaction.reply({
-                content: '✅ Propozycja została pomyślnie usunięta.',
-                ephemeral: true
-            });
-
-        }
-
-        // =================================================
-        // NAPISZ PROPOZYCJĘ
-        // =================================================
-
-        if (interaction.customId === 'prop_napisz') {
-
-            return interaction.reply({
-                content: '📝 Aby stworzyć nową propozycję, po prostu wyślij wiadomość na tym kanale.',
-                ephemeral: true
-            });
-
-        }
-
-        // =================================================
-        // ZABEZPIECZENIE STARYCH PROPOZYCJI
-        // =================================================
-
-        if (!propozycjeDb.has(propId)) {
-
-            return interaction.reply({
-                content: '⚠️ Ta propozycja pochodzi z poprzedniej sesji. Głosowanie jest zamknięte.',
-                ephemeral: true
-            });
-
-        }
-
-        const danePropozycji = propozycjeDb.get(propId);
-        const userId = interaction.user.id;
-
-        // =================================================
-        // GŁOS ZA
-        // =================================================
-
-        if (interaction.customId === 'prop_tak') {
-
-            if (danePropozycji.tak.has(userId)) {
-
-                return interaction.reply({
-                    content: '❌ Twój głos na **ZA** jest już oddany.',
-                    ephemeral: true
-                });
-
+            if (!tresc) {
+                return;
             }
 
-            danePropozycji.tak.add(userId);
-            danePropozycji.nie.delete(userId);
+            // Usunięcie wiadomości użytkownika
+            await message
+                .delete()
+                .catch(() => {});
 
-        }
+            const data = {
 
-        // =================================================
-        // GŁOS PRZECIW
-        // =================================================
+                tak:
+                    new Set(),
 
-        if (interaction.customId === 'prop_nie') {
+                nie:
+                    new Set(),
 
-            if (danePropozycji.nie.has(userId)) {
+                autorTag:
+                    message.author.tag,
 
-                return interaction.reply({
-                    content: '❌ Twój głos na **PRZECIW** jest już oddany.',
-                    ephemeral: true
-                });
+                tresc:
+                    tresc
+
+            };
+
+            try {
+
+                const sent =
+                    await message.channel.send({
+
+                        components: [
+                            createProposalPanel(
+                                data
+                            )
+                        ],
+
+                        flags:
+                            MessageFlags.IsComponentsV2
+
+                    });
+
+                propozycjeDb.set(
+                    sent.id,
+                    data
+                );
+
+            } catch (error) {
+
+                console.error(
+                    '❌ Błąd wysyłania propozycji:',
+                    error
+                );
 
             }
 
-            danePropozycji.nie.add(userId);
-            danePropozycji.tak.delete(userId);
+        }
+    );
+
+    // =====================================================
+    // OBSŁUGA PRZYCISKÓW
+    // =====================================================
+
+    client.on(
+        'interactionCreate',
+        async (interaction) => {
+
+            if (!interaction.isButton()) {
+                return;
+            }
+
+            if (
+                !interaction.customId.startsWith(
+                    'prop_'
+                )
+            ) {
+                return;
+            }
+
+            const proposalId =
+                interaction.message.id;
+
+            // =================================================
+            // USUWANIE
+            // =================================================
+
+            if (
+                interaction.customId ===
+                'prop_usun'
+            ) {
+
+                if (
+                    !isAdmin(
+                        interaction.member
+                    )
+                ) {
+
+                    return interaction.reply({
+
+                        content:
+                            '❌ Tylko administracja może usuwać propozycje.',
+
+                        ephemeral:
+                            true
+
+                    });
+                }
+
+                propozycjeDb.delete(
+                    proposalId
+                );
+
+                await interaction.message
+                    .delete()
+                    .catch(() => {});
+
+                return interaction.reply({
+
+                    content:
+                        '✅ Propozycja została usunięta.',
+
+                    ephemeral:
+                        true
+
+                });
+            }
+
+            // =================================================
+            // POBRANIE DANYCH
+            // =================================================
+
+            const data =
+                propozycjeDb.get(
+                    proposalId
+                );
+
+            if (!data) {
+
+                return interaction.reply({
+
+                    content:
+                        '⚠️ Ta propozycja pochodzi sprzed restartu bota. Głosowanie jest zamknięte.',
+
+                    ephemeral:
+                        true
+
+                });
+            }
+
+            const userId =
+                interaction.user.id;
+
+            // =================================================
+            // ZA
+            // =================================================
+
+            if (
+                interaction.customId ===
+                'prop_tak'
+            ) {
+
+                // Kliknięcie drugi raz
+                // usuwa głos
+
+                if (
+                    data.tak.has(
+                        userId
+                    )
+                ) {
+
+                    data.tak.delete(
+                        userId
+                    );
+
+                } else {
+
+                    data.tak.add(
+                        userId
+                    );
+
+                    data.nie.delete(
+                        userId
+                    );
+                }
+            }
+
+            // =================================================
+            // PRZECIW
+            // =================================================
+
+            if (
+                interaction.customId ===
+                'prop_nie'
+            ) {
+
+                if (
+                    data.nie.has(
+                        userId
+                    )
+                ) {
+
+                    data.nie.delete(
+                        userId
+                    );
+
+                } else {
+
+                    data.nie.add(
+                        userId
+                    );
+
+                    data.tak.delete(
+                        userId
+                    );
+                }
+            }
+
+            // =================================================
+            // AKTUALIZACJA PANELU
+            // =================================================
+
+            try {
+
+                await interaction.update({
+
+                    components: [
+                        createProposalPanel(
+                            data
+                        )
+                    ],
+
+                    flags:
+                        MessageFlags.IsComponentsV2
+
+                });
+
+            } catch (error) {
+
+                console.error(
+                    '❌ Błąd aktualizacji propozycji:',
+                    error
+                );
+
+            }
 
         }
-
-        // =================================================
-        // AKTUALIZACJA PANELU
-        // =================================================
-
-        const zaktualizowanyPanel = stworzPanelPropozycji({
-            autorTag: danePropozycji.autorTag,
-            tresc: danePropozycji.tresc,
-            ileTak: danePropozycji.tak.size,
-            ileNie: danePropozycji.nie.size
-        });
-
-        try {
-
-            await interaction.update({
-                components: [zaktualizowanyPanel]
-            });
-
-        } catch (err) {
-
-            console.error(
-                '❌ Błąd podczas aktualizacji propozycji:',
-                err
-            );
-
-        }
-
-    });
-
+    );
 };
