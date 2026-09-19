@@ -1,323 +1,950 @@
-const { 
-    ActionRowBuilder, 
-    StringSelectMenuBuilder, 
-    ModalBuilder, 
-    TextInputBuilder, 
-    TextInputStyle, 
-    ButtonBuilder, 
-    ButtonStyle, 
-    ChannelType, 
+const {
+    ActionRowBuilder,
+    StringSelectMenuBuilder,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle,
+    ButtonBuilder,
+    ButtonStyle,
+    ChannelType,
     PermissionFlagsBits,
     EmbedBuilder,
-    AttachmentBuilder
+    AttachmentBuilder,
+    ContainerBuilder,
+    TextDisplayBuilder,
+    SeparatorBuilder,
+    SeparatorSpacingSize,
+    MessageFlags
 } = require('discord.js');
 
-// STANOWISKA I KONFIGURACJA
-const firmowyKolor = '#FFF275';
+const KOLOR = 0xFFF275;
+const KOLOR_HEX = '#FFF275';
+
 const KATEGORIA_ID = '1494425319862436031';
 const ROLA_ADMIN_ID = '1495094192957817025';
 const LOGI_KANAL_ID = '1505560669326413985';
 
-// ESTETYCZNA KRESKA - SEPARATOR
-const KRESKA = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
-
 const ticketCache = new Map();
 
-// Mapowanie ID z formularza na czytelne nazwy
 const fieldLabels = {
-    'nick': 'Nick',
-    'opis': 'Opis sytuacji',
-    'typ_problemu': 'Typ problemu',
-    'link': 'Link do kanału / oferty',
-    'oskarzony': 'Oskarżony gracz',
-    'powod': 'Powód i dowody',
-    'powod_bana': 'Powód bana',
-    'dlaczego': 'Dlaczego mamy zdjąć karę?',
-    'wiek': 'Wiek',
-    'rola': 'Aplikowana ranga',
-    'dlaczego_ty': 'Dlaczego akurat Ty?'
+    nick: 'Nick',
+    opis: 'Opis sytuacji',
+    typ_problemu: 'Typ problemu',
+    link: 'Link do kanału / oferty',
+    oskarzony: 'Oskarżony gracz',
+    powod: 'Powód i dowody',
+    powod_bana: 'Powód bana',
+    dlaczego: 'Dlaczego mamy zdjąć karę?',
+    wiek: 'Wiek',
+    rola: 'Aplikowana ranga',
+    dlaczego_ty: 'Dlaczego akurat Ty?'
 };
+
+const ticketTypes = {
+    pomoc_ogolna: {
+        label: 'Pomoc ogólna',
+        emoji: '🆘',
+        description: 'Pytania dotyczące serwera i ogólna pomoc.'
+    },
+    problemy_konto: {
+        label: 'Problemy z kontem',
+        emoji: '🔑',
+        description: 'Logowanie, hasło, przedmioty lub konto.'
+    },
+    wspolpraca: {
+        label: 'Współpraca',
+        emoji: '💼',
+        description: 'Partnerstwo, YouTube, Twitch lub Discord.'
+    },
+    zgloszenie_gracza: {
+        label: 'Zgłoszenie gracza',
+        emoji: '⚠️',
+        description: 'Zgłoszenie osoby łamiącej regulamin.'
+    },
+    odwolanie_ban: {
+        label: 'Odwołanie od bana',
+        emoji: '🔨',
+        description: 'Odwołanie od nałożonej kary.'
+    },
+    rekrutacja: {
+        label: 'Rekrutacja',
+        emoji: '📝',
+        description: 'Chcesz dołączyć do ekipy BroBox.pl.'
+    }
+};
+
+function isAdmin(member) {
+    return Boolean(
+        member?.permissions?.has(PermissionFlagsBits.Administrator) ||
+        member?.roles?.cache?.has(ROLA_ADMIN_ID)
+    );
+}
+
+function safeChannelName(username, userId) {
+    const clean = username
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, '')
+        .slice(0, 70);
+
+    return `ticket-${clean || userId.slice(-6)}`;
+}
+
+function createTicketSetupPanel() {
+    const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId('ticket_select_menu')
+        .setPlaceholder('Wybierz rodzaj zgłoszenia...')
+        .addOptions(
+            Object.entries(ticketTypes).map(([value, data]) => ({
+                label: data.label,
+                description: data.description,
+                value,
+                emoji: data.emoji
+            }))
+        );
+
+    const selectRow = new ActionRowBuilder().addComponents(selectMenu);
+
+    const container = new ContainerBuilder()
+        .setAccentColor(KOLOR)
+        .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+                '# 🎫 BroBox.pl | Centrum pomocy\n' +
+                'Witaj w oficjalnym systemie zgłoszeń.\n\n' +
+                'Wybierz kategorię poniżej, aby utworzyć prywatny kanał z administracją.\n' +
+                'Przed wysłaniem formularza przygotuj dokładny opis sytuacji i ewentualne dowody.'
+            )
+        )
+        .addSeparatorComponents(
+            new SeparatorBuilder()
+                .setDivider(true)
+                .setSpacing(SeparatorSpacingSize.Small)
+        )
+        .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+                '### 📌 Zasady zgłoszeń\n' +
+                '• Jeden użytkownik może posiadać jeden otwarty ticket.\n' +
+                '• Nie oznaczaj administracji bez potrzeby.\n' +
+                '• W zgłoszeniach gracza dodaj konkretne dowody.\n' +
+                '• Po zakończeniu sprawy ticket zostanie zamknięty.'
+            )
+        )
+        .addSeparatorComponents(
+            new SeparatorBuilder()
+                .setDivider(true)
+                .setSpacing(SeparatorSpacingSize.Small)
+        )
+        .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+                '**Wybierz temat zgłoszenia z menu poniżej:**'
+            )
+        )
+        .addActionRowComponents(selectRow);
+
+    return container;
+}
+
+function createTicketPanel(userId, userTag, categoryName, formData) {
+    const container = new ContainerBuilder()
+        .setAccentColor(KOLOR)
+        .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+                `# 🎫 BroBox.pl | ${categoryName}\n` +
+                `Witaj <@${userId}>! Twoje zgłoszenie zostało utworzone.\n\n` +
+                'Administracja otrzymała Twoje zgłoszenie. Opisz dodatkowe informacje w tym kanale, jeśli będą potrzebne.'
+            )
+        )
+        .addSeparatorComponents(
+            new SeparatorBuilder()
+                .setDivider(true)
+                .setSpacing(SeparatorSpacingSize.Small)
+        )
+        .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+                '## 📋 Szczegóły zgłoszenia'
+            )
+        );
+
+    for (const item of formData) {
+        container.addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+                `**${item.label}:**\n${item.value || 'Brak danych'}`
+            )
+        );
+    }
+
+    const buttons = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('claim_ticket')
+            .setLabel('Przejmij ticket')
+            .setEmoji('📌')
+            .setStyle(ButtonStyle.Success),
+
+        new ButtonBuilder()
+            .setCustomId('close_ticket')
+            .setLabel('Zamknij ticket')
+            .setEmoji('🔒')
+            .setStyle(ButtonStyle.Danger)
+    );
+
+    container
+        .addSeparatorComponents(
+            new SeparatorBuilder()
+                .setDivider(true)
+                .setSpacing(SeparatorSpacingSize.Small)
+        )
+        .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+                '🔔 **Administracja:** odpowiadaj konkretnie i zachowuj kulturę wypowiedzi.'
+            )
+        )
+        .addActionRowComponents(buttons);
+
+    return container;
+}
+
+function createModal(type) {
+    const modal = new ModalBuilder();
+
+    const input = (
+        id,
+        label,
+        placeholder,
+        style = TextInputStyle.Short
+    ) =>
+        new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+                .setCustomId(id)
+                .setLabel(label)
+                .setPlaceholder(placeholder)
+                .setStyle(style)
+                .setRequired(true)
+        );
+
+    if (type === 'pomoc_ogolna') {
+        modal
+            .setCustomId('modal_pomoc_ogolna')
+            .setTitle('Pomoc ogólna');
+
+        modal.addComponents(
+            input(
+                'nick',
+                'Nick z Minecraft',
+                'Twój nick...'
+            ),
+            input(
+                'opis',
+                'Opisz problem',
+                'Opisz dokładnie sytuację...',
+                TextInputStyle.Paragraph
+            )
+        );
+    }
+
+    if (type === 'problemy_konto') {
+        modal
+            .setCustomId('modal_problemy_konto')
+            .setTitle('Problemy z kontem');
+
+        modal.addComponents(
+            input(
+                'nick',
+                'Nick z Minecraft',
+                'Twój nick...'
+            ),
+            input(
+                'typ_problemu',
+                'Typ problemu',
+                'Np. hasło, przedmioty, logowanie...'
+            ),
+            input(
+                'opis',
+                'Szczegółowy opis',
+                'Opisz dokładnie sytuację...',
+                TextInputStyle.Paragraph
+            )
+        );
+    }
+
+    if (type === 'wspolpraca') {
+        modal
+            .setCustomId('modal_wspolpraca')
+            .setTitle('Współpraca');
+
+        modal.addComponents(
+            input(
+                'nick',
+                'Nick / nazwa',
+                'Twój nick lub nazwa projektu...'
+            ),
+            input(
+                'link',
+                'Link do kanału / oferty',
+                'https://...'
+            ),
+            input(
+                'opis',
+                'Propozycja współpracy',
+                'Co oferujesz?',
+                TextInputStyle.Paragraph
+            )
+        );
+    }
+
+    if (type === 'zgloszenie_gracza') {
+        modal
+            .setCustomId('modal_zgloszenie_gracza')
+            .setTitle('Zgłoszenie gracza');
+
+        modal.addComponents(
+            input(
+                'nick',
+                'Twój nick',
+                'Twój nick...'
+            ),
+            input(
+                'oskarzony',
+                'Nick zgłaszanego gracza',
+                'Nick gracza...'
+            ),
+            input(
+                'powod',
+                'Powód i dowody',
+                'Opisz powód i dodaj linki do dowodów...',
+                TextInputStyle.Paragraph
+            )
+        );
+    }
+
+    if (type === 'odwolanie_ban') {
+        modal
+            .setCustomId('modal_odwolanie_ban')
+            .setTitle('Odwołanie od bana');
+
+        modal.addComponents(
+            input(
+                'nick',
+                'Twój nick z Minecraft',
+                'Twój nick...'
+            ),
+            input(
+                'powod_bana',
+                'Powód bana',
+                'Za co otrzymałeś bana?'
+            ),
+            input(
+                'dlaczego',
+                'Dlaczego unban?',
+                'Wyjaśnij sytuację...',
+                TextInputStyle.Paragraph
+            )
+        );
+    }
+
+    if (type === 'rekrutacja') {
+        modal
+            .setCustomId('modal_rekrutacja')
+            .setTitle('Rekrutacja');
+
+        modal.addComponents(
+            input(
+                'nick',
+                'Nick z Minecraft',
+                'Twój nick...'
+            ),
+            input(
+                'wiek',
+                'Wiek',
+                'Ile masz lat?'
+            ),
+            input(
+                'rola',
+                'Na jaką rangę aplikujesz?',
+                'Helper, Moderator, Budowniczy...'
+            ),
+            input(
+                'dlaczego_ty',
+                'Dlaczego akurat Ty?',
+                'Napisz coś o sobie...',
+                TextInputStyle.Paragraph
+            )
+        );
+    }
+
+    return modal;
+}
 
 module.exports = (client) => {
 
-    // 1. KOMENDA SETUP TICKETÓW (!setup-tickety)
+    // =====================================================
+    // PANEL STARTOWY
+    // =====================================================
+
     client.on('messageCreate', async (message) => {
         if (message.author.bot) return;
 
         if (message.content === '!setup-tickety') {
-            if (!message.member.roles.cache.has(ROLA_ADMIN_ID) && !message.member.permissions.has(PermissionFlagsBits.Administrator)) {
-                return message.reply('❌ Nie posiadasz uprawnień do użycia tej komendy.');
+
+            if (!isAdmin(message.member)) {
+                return message.reply(
+                    '❌ Nie posiadasz uprawnień do użycia tej komendy.'
+                );
             }
 
-            const embed = new EmbedBuilder()
-                .setTitle('🎫 BROBOX.PL × SYSTEM TICKETÓW')
-                .setDescription(
-                    'Witaj w systemie wsparcia **BroBox.pl**!\n\n' +
-                    `${KRESKA}\n\n` +
-                    'Wybierz odpowiedni typ zgłoszenia z menu poniżej.\n\n' +
-                    '*Po wybraniu opcji zostaniesz poproszony o wypełnienie krótkiego formularza.*'
-                )
-                .setColor(firmowyKolor)
-                .setFooter({ text: 'BroBox.pl • System Zgłoszeń' });
+            try {
 
-            const selectMenu = new StringSelectMenuBuilder()
-                .setCustomId('ticket_select_menu')
-                .setPlaceholder('Wybierz rodzaj zgłoszenia...')
-                .addOptions([
-                    { label: 'Pomoc Ogólna', description: 'Masz pytanie dotyczące serwera lub ogólny problem.', value: 'pomoc_ogolna', emoji: '🆘' },
-                    { label: 'Problemy z Kontem', description: 'Problemy z logowaniem, hasłem lub utraconymi przedmiotami.', value: 'problemy_konto', emoji: '🔑' },
-                    { label: 'Współpraca', description: 'Chcesz zostać naszym partnerem (YouTube, Twitch, Discord).', value: 'wspolpraca', emoji: '💼' },
-                    { label: 'Zgłoszenie Gracza', description: 'Ktoś łamie regulamin i chcesz to zgłosić.', value: 'zgloszenie_gracza', emoji: '⚠️' },
-                    { label: 'Odwołanie od Bana', description: 'Uważasz, że Twoja kara jest niesłuszna.', value: 'odwolanie_ban', emoji: '🔨' },
-                    { label: 'Rekrutacja', description: 'Chcesz dołączyć do zespołu naszego serwera.', value: 'rekrutacja', emoji: '📝' }
-                ]);
+                await message.channel.send({
+                    components: [
+                        createTicketSetupPanel()
+                    ],
+                    flags: MessageFlags.IsComponentsV2
+                });
 
-            const row = new ActionRowBuilder().addComponents(selectMenu);
+                if (message.deletable) {
+                    await message.delete().catch(() => {});
+                }
 
-            await message.channel.send({ embeds: [embed], components: [row] });
-            if (message.deletable) message.delete().catch(() => {});
+            } catch (error) {
+
+                console.error(
+                    '❌ Błąd panelu ticketów:',
+                    error
+                );
+
+                await message.reply(
+                    '❌ Nie udało się wysłać panelu ticketów. Sprawdź wersję discord.js.'
+                );
+            }
         }
     });
 
-    // 2. OBSŁUGA WYBORU Z MENU (OTWIERANIE MODALA)
+    // =====================================================
+    // SELECT MENU
+    // =====================================================
+
     client.on('interactionCreate', async (interaction) => {
+
         if (!interaction.isStringSelectMenu()) return;
-        if (interaction.customId !== 'ticket_select_menu') return;
 
-        const wyboR = interaction.values[0];
-        let modal = new ModalBuilder();
-
-        if (wyboR === 'pomoc_ogolna') {
-            modal.setCustomId('modal_pomoc_ogolna').setTitle('Ticket: Pomoc Ogólna');
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nick').setLabel('Nick z Minecraft').setPlaceholder('Twój nick...').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('opis').setLabel('Opisz problem').setPlaceholder('Opisz swój problem...').setStyle(TextInputStyle.Paragraph).setRequired(true))
-            );
-        } else if (wyboR === 'problemy_konto') {
-            modal.setCustomId('modal_problemy_konto').setTitle('Ticket: Problemy z Kontem');
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nick').setLabel('Nick z Minecraft').setPlaceholder('Twój nick...').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('typ_problemu').setLabel('Typ problemu (np. Hasło, Przedmioty)').setPlaceholder('Co się stało?').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('opis').setLabel('Szczegółowy opis').setPlaceholder('Opisz sytuację...').setStyle(TextInputStyle.Paragraph).setRequired(true))
-            );
-        } else if (wyboR === 'wspolpraca') {
-            modal.setCustomId('modal_wspolpraca').setTitle('Ticket: Współpraca');
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nick').setLabel('Nick / Nazwa').setPlaceholder('Twój nick...').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('link').setLabel('Link do kanału / oferty').setPlaceholder('https://...').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('opis').setLabel('Propozycja współpracy').setPlaceholder('Co oferujesz?').setStyle(TextInputStyle.Paragraph).setRequired(true))
-            );
-        } else if (wyboR === 'zgloszenie_gracza') {
-            modal.setCustomId('modal_zgloszenie_gracza').setTitle('Ticket: Zgłoszenie Gracza');
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nick').setLabel('Twój Nick').setPlaceholder('Twój nick...').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('oskarzony').setLabel('Nick Oskartego Gracza').setPlaceholder('Nick gracza...').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('powod').setLabel('Powód i dowody').setPlaceholder('Opisz powód oraz wklej link do dowodów...').setStyle(TextInputStyle.Paragraph).setRequired(true))
-            );
-        } else if (wyboR === 'odwolanie_ban') {
-            modal.setCustomId('modal_odwolanie_ban').setTitle('Ticket: Odwołanie od Bana');
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nick').setLabel('Twój Nick z Minecraft').setPlaceholder('Twój nick...').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('powod_bana').setLabel('Powód bana').setPlaceholder('Za co dostałeś bana?').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('dlaczego').setLabel('Dlaczego powinieneś dostać unbana?').setPlaceholder('Wyjaśnij sytuację...').setStyle(TextInputStyle.Paragraph).setRequired(true))
-            );
-        } else if (wyboR === 'rekrutacja') {
-            modal.setCustomId('modal_rekrutacja').setTitle('Ticket: Rekrutacja');
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nick').setLabel('Nick z Minecraft').setPlaceholder('Twój nick...').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('wiek').setLabel('Wiek').setPlaceholder('Ile masz lat?').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('rola').setLabel('Ranga (Helper/Budowniczy itp.)').setPlaceholder('Na jaką rangę aplikujesz?').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('dlaczego_ty').setLabel('Dlaczego akurat Ty?').setPlaceholder('Napisz coś o sobie...').setStyle(TextInputStyle.Paragraph).setRequired(true))
-            );
+        if (interaction.customId !== 'ticket_select_menu') {
+            return;
         }
 
-        await interaction.showModal(modal);
+        const type = interaction.values[0];
+
+        if (!ticketTypes[type]) return;
+
+        await interaction.showModal(
+            createModal(type)
+        );
     });
 
-    // 3. OBSŁUGA WYSŁANEGO FORMULARZA (TWORZENIE KANAŁU TICKETU)
+    // =====================================================
+    // MODALE
+    // =====================================================
+
     client.on('interactionCreate', async (interaction) => {
+
         if (!interaction.isModalSubmit()) return;
-        if (!interaction.customId.startsWith('modal_')) return;
+
+        if (!interaction.customId.startsWith('modal_')) {
+            return;
+        }
 
         try {
-            await interaction.deferReply({ ephemeral: true });
 
-            const typeMap = {
-                'modal_pomoc_ogolna': 'Pomoc Ogólna',
-                'modal_problemy_konto': 'Problemy z Kontem',
-                'modal_wspolpraca': 'Współpraca',
-                'modal_zgloszenie_gracza': 'Zgłoszenie Gracza',
-                'modal_odwolanie_ban': 'Odwołanie od Bana',
-                'modal_rekrutacja': 'Rekrutacja'
-            };
+            await interaction.deferReply({
+                ephemeral: true
+            });
 
-            const kategoriaNazwa = typeMap[interaction.customId] || 'Zgłoszenie';
-            const cleanUser = interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g, '') || 'gracz';
-            const channelName = `ticket-${cleanUser}`;
+            const categoryKey =
+                interaction.customId.replace('modal_', '');
 
-            const existingChannel = interaction.guild.channels.cache.find(c => c.name === channelName);
-            if (existingChannel) {
-                return interaction.editReply({ content: `❌ Posiadasz już otwarty ticket: ${existingChannel}` });
+            const categoryName =
+                ticketTypes[categoryKey]?.label ||
+                'Zgłoszenie';
+
+            const channelName =
+                safeChannelName(
+                    interaction.user.username,
+                    interaction.user.id
+                );
+
+            const existing =
+                interaction.guild.channels.cache.find(
+                    channel =>
+                        channel.name === channelName
+                );
+
+            if (existing) {
+
+                return interaction.editReply({
+                    content:
+                        `❌ Masz już otwarty ticket: ${existing}`
+                });
             }
 
             const formData = [];
+
             interaction.fields.fields.forEach(field => {
-                const prettyLabel = fieldLabels[field.customId] || field.customId; 
-                formData.push({ name: field.customId, label: prettyLabel, value: field.value });
+
+                formData.push({
+                    name: field.customId,
+                    label:
+                        fieldLabels[field.customId] ||
+                        field.customId,
+                    value: field.value
+                });
+
             });
 
-            const ticketChannel = await interaction.guild.channels.create({
-                name: channelName,
-                type: ChannelType.GuildText,
-                parent: KATEGORIA_ID,
-                permissionOverwrites: [
-                    { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-                    { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles, PermissionFlagsBits.EmbedLinks, PermissionFlagsBits.ReadMessageHistory] },
-                    { id: ROLA_ADMIN_ID, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles, PermissionFlagsBits.EmbedLinks, PermissionFlagsBits.ReadMessageHistory] }
-                ]
-            });
+            // =================================================
+            // TWORZENIE KANAŁU
+            // =================================================
 
-            ticketCache.set(ticketChannel.id, {
-                owner: interaction.user,
-                category: kategoriaNazwa,
-                formData: formData,
-                createdAt: new Date(),
-                claimedBy: null
-            });
+            const ticketChannel =
+                await interaction.guild.channels.create({
 
-            const ticketEmbed = new EmbedBuilder()
-                .setTitle(`🎫 BroBox.pl — ${kategoriaNazwa}`)
-                .setDescription(
-                    `Witaj <@${interaction.user.id}>!\n\n` +
-                    `${KRESKA}\n\n` +
-                    `Oto szczegóły Twojego zgłoszenia. Administracja zajmie się nim najszybciej jak to możliwe.`
-                )
-                .setColor(firmowyKolor)
-                .setFooter({ text: `Użytkownik: ${interaction.user.tag}` })
-                .setTimestamp();
+                    name: channelName,
 
-            formData.forEach(item => {
-                ticketEmbed.addFields({ name: `📌 ${item.label}`, value: item.value || 'Brak danych', inline: false });
-            });
+                    type: ChannelType.GuildText,
 
-            const actionButtons = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('claim_ticket').setLabel('Przejmij ticket').setStyle(ButtonStyle.Success).setEmoji('📌'),
-                new ButtonBuilder().setCustomId('close_ticket').setLabel('Zamknij ticket').setStyle(ButtonStyle.Danger).setEmoji('🔒')
+                    parent: KATEGORIA_ID,
+
+                    topic:
+                        `Ticket ${categoryName} | Otworzył: ${interaction.user.tag}`,
+
+                    permissionOverwrites: [
+
+                        {
+                            id: interaction.guild.id,
+
+                            deny: [
+                                PermissionFlagsBits.ViewChannel
+                            ]
+                        },
+
+                        {
+                            id: interaction.user.id,
+
+                            allow: [
+                                PermissionFlagsBits.ViewChannel,
+                                PermissionFlagsBits.SendMessages,
+                                PermissionFlagsBits.AttachFiles,
+                                PermissionFlagsBits.EmbedLinks,
+                                PermissionFlagsBits.ReadMessageHistory
+                            ]
+                        },
+
+                        {
+                            id: ROLA_ADMIN_ID,
+
+                            allow: [
+                                PermissionFlagsBits.ViewChannel,
+                                PermissionFlagsBits.SendMessages,
+                                PermissionFlagsBits.AttachFiles,
+                                PermissionFlagsBits.EmbedLinks,
+                                PermissionFlagsBits.ReadMessageHistory
+                            ]
+                        }
+
+                    ]
+                });
+
+            ticketCache.set(
+                ticketChannel.id,
+                {
+                    owner: interaction.user,
+                    category: categoryName,
+                    formData,
+                    createdAt: new Date(),
+                    claimedBy: null
+                }
             );
 
+            // =================================================
+            // WIADOMOŚĆ TICKETU
+            // =================================================
+
             await ticketChannel.send({
-                content: `<@${interaction.user.id}> | <@&${ROLA_ADMIN_ID}>`,
-                embeds: [ticketEmbed],
-                components: [actionButtons]
+
+                content:
+                    `<@${interaction.user.id}> | <@&${ROLA_ADMIN_ID}>`,
+
+                components: [
+                    createTicketPanel(
+                        interaction.user.id,
+                        interaction.user.tag,
+                        categoryName,
+                        formData
+                    )
+                ],
+
+                flags:
+                    MessageFlags.IsComponentsV2
             });
 
-            await interaction.editReply({ content: `✅ Twój ticket został pomyślnie utworzony: ${ticketChannel}` });
+            await interaction.editReply({
+
+                content:
+                    `✅ Ticket został utworzony: ${ticketChannel}`
+            });
+
         } catch (error) {
-            console.error('❌ Błąd podczas tworzenia ticketu:', error);
-            if (interaction.deferred || interaction.replied) {
-                await interaction.editReply({ 
-                    content: '❌ Wystąpił błąd podczas tworzenia ticketu. Upewnij się, że bot ma uprawnienia do tworzenia kanałów oraz że podane ID kategorii i roli są poprawne.' 
+
+            console.error(
+                '❌ Błąd tworzenia ticketu:',
+                error
+            );
+
+            const text =
+                '❌ Wystąpił błąd podczas tworzenia ticketu. ' +
+                'Sprawdź ID kategorii, ID roli, uprawnienia bota i wersję discord.js.';
+
+            if (
+                interaction.deferred ||
+                interaction.replied
+            ) {
+
+                await interaction.editReply({
+                    content: text
+                }).catch(() => {});
+
+            } else {
+
+                await interaction.reply({
+                    content: text,
+                    ephemeral: true
                 }).catch(() => {});
             }
         }
     });
 
-    // 4. OBSŁUGA PRZYCISKÓW (PRZEJMOWANIE, ZAMYKANIE I TRANSKRYPTY)
+    // =====================================================
+    // PRZYCISKI
+    // =====================================================
+
     client.on('interactionCreate', async (interaction) => {
+
         if (!interaction.isButton()) return;
 
-        const data = ticketCache.get(interaction.channel.id);
-
-        if (interaction.customId === 'claim_ticket') {
-            if (!interaction.member.roles.cache.has(ROLA_ADMIN_ID) && !interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-                return interaction.reply({ content: '❌ Tylko Administracja może przejmować tickety.', ephemeral: true });
-            }
-
-            if (data && data.claimedBy) {
-                return interaction.reply({ content: `❌ Ten ticket został już przejęty przez <@${data.claimedBy.id}>.`, ephemeral: true });
-            }
-
-            if (data) data.claimedBy = interaction.user;
-
-            await interaction.reply({ content: `📌 **Ten ticket został przejęty przez:** <@${interaction.user.id}>` });
+        if (
+            ![
+                'claim_ticket',
+                'close_ticket'
+            ].includes(interaction.customId)
+        ) {
+            return;
         }
 
-        if (interaction.customId === 'close_ticket') {
-            if (!interaction.member.roles.cache.has(ROLA_ADMIN_ID) && !interaction.member.permissions.has(PermissionFlagsBits.Administrator) && data && interaction.user.id !== data.owner.id) {
-                return interaction.reply({ content: '❌ Nie masz uprawnień do zamknięcia tego ticketu.', ephemeral: true });
+        const data =
+            ticketCache.get(
+                interaction.channelId
+            );
+
+        // =================================================
+        // PRZEJĘCIE
+        // =================================================
+
+        if (
+            interaction.customId ===
+            'claim_ticket'
+        ) {
+
+            if (!isAdmin(interaction.member)) {
+
+                return interaction.reply({
+                    content:
+                        '❌ Tylko administracja może przejmować tickety.',
+                    ephemeral: true
+                });
             }
 
-            await interaction.reply('🔒 Rozpoczęto zamykanie... Generowanie transkryptu (potrwa to kilka sekund).');
+            if (data?.claimedBy) {
 
-            // --- GENEROWANIE TRANSKRYPTU ---
+                return interaction.reply({
+                    content:
+                        `❌ Ticket został już przejęty przez <@${data.claimedBy.id}>.`,
+                    ephemeral: true
+                });
+            }
+
+            if (data) {
+                data.claimedBy =
+                    interaction.user;
+            }
+
+            return interaction.reply({
+                content:
+                    `📌 **Ticket został przejęty przez:** <@${interaction.user.id}>`
+            });
+        }
+
+        // =================================================
+        // ZAMKNIĘCIE
+        // =================================================
+
+        if (
+            interaction.customId ===
+            'close_ticket'
+        ) {
+
+            if (
+                !isAdmin(interaction.member) &&
+                data &&
+                interaction.user.id !==
+                    data.owner.id
+            ) {
+
+                return interaction.reply({
+                    content:
+                        '❌ Nie masz uprawnień do zamknięcia tego ticketu.',
+                    ephemeral: true
+                });
+            }
+
+            await interaction.reply(
+                '🔒 Rozpoczęto zamykanie ticketu. Generuję transkrypt...'
+            );
+
+            // =================================================
+            // TRANSKRYPT
+            // =================================================
+
             let allMessages = [];
+
             let lastId;
+
             try {
+
                 while (true) {
-                    const options = { limit: 100 };
-                    if (lastId) options.before = lastId;
-                    
-                    const fetched = await interaction.channel.messages.fetch(options);
-                    if (fetched.size === 0) break;
-                    
-                    allMessages.push(...fetched.values());
-                    lastId = fetched.last().id;
+
+                    const options = {
+                        limit: 100
+                    };
+
+                    if (lastId) {
+                        options.before =
+                            lastId;
+                    }
+
+                    const fetched =
+                        await interaction.channel.messages.fetch(
+                            options
+                        );
+
+                    if (!fetched.size) {
+                        break;
+                    }
+
+                    allMessages.push(
+                        ...fetched.values()
+                    );
+
+                    lastId =
+                        fetched.last().id;
                 }
-            } catch (err) {
-                console.error('❌ Błąd podczas pobierania wiadomości do transkryptu:', err);
+
+            } catch (error) {
+
+                console.error(
+                    '❌ Błąd pobierania transkryptu:',
+                    error
+                );
             }
 
             allMessages.reverse();
 
-            const transcriptHeader = 
-                `==================================================\n` +
-                `          BROBOX.PL — TRANSKRYPT TICKETU          \n` +
-                ` Kanał: ${interaction.channel.name}\n` +
-                ` Data zamknięcia: ${new Date().toLocaleString('pl-PL')}\n` +
-                `==================================================\n\n`;
+            const header =
+                '==================================================\n' +
+                '                 BROBOX.PL\n' +
+                '              TRANSKRYPT TICKETU\n' +
+                '==================================================\n' +
+                `Kanał: ${interaction.channel.name}\n` +
+                `Data zamknięcia: ${new Date().toLocaleString('pl-PL')}\n\n`;
 
-            const transcriptBody = allMessages.map(m => {
-                const time = m.createdAt.toLocaleString('pl-PL');
-                const content = m.content || '[Wysłano Embed / Załącznik]';
-                return `[${time}] ${m.author.tag}: ${content}`;
-            }).join('\n--------------------------------------------------\n');
+            const body =
+                allMessages
+                    .map(message => {
 
-            const transcriptAttachment = new AttachmentBuilder(
-                Buffer.from(transcriptHeader + transcriptBody, 'utf-8'), 
-                { name: `transkrypt-${interaction.channel.name}.txt` }
-            );
-            // ---------------------------------
+                        const time =
+                            message.createdAt.toLocaleString(
+                                'pl-PL'
+                            );
 
-            const logsChannel = interaction.guild.channels.cache.get(LOGI_KANAL_ID);
-            if (logsChannel) {
-                const logEmbed = new EmbedBuilder()
-                    .setTitle('📜 ZAAWANSOWANE LOGI — ZAMKNIĘCIE TICKETU')
-                    .setColor(firmowyKolor)
-                    .addFields(
-                        { name: '👤 Otwierający:', value: data ? `${data.owner.tag} (\`${data.owner.id}\`)` : 'Nieznany', inline: true },
-                        { name: '🔒 Zamknięty przez:', value: `${interaction.user.tag} (\`${interaction.user.id}\`)`, inline: true },
-                        { name: '📌 Przejęty przez:', value: (data && data.claimedBy) ? `${data.claimedBy.tag} (\`${data.claimedBy.id}\`)` : 'Nieprzejęty', inline: true },
-                        { name: '📂 Kategoria:', value: data ? data.category : 'Brak danych', inline: true },
-                        { name: '📅 Data otwarcia:', value: data ? `<t:${Math.floor(data.createdAt.getTime() / 1000)}:F>` : 'Brak', inline: true },
-                        { name: '⏱️ Data zamknięcia:', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true },
-                        { name: KRESKA, value: '**DANE Z FORMULARZA:**', inline: false }
+                        const content =
+                            message.content ||
+                            '[Embed / Components / Załącznik]';
+
+                        return (
+                            `[${time}] ` +
+                            `${message.author.tag}: ` +
+                            content
+                        );
+
+                    })
+                    .join(
+                        '\n--------------------------------------------------\n'
                     );
 
-                if (data && data.formData) {
-                    data.formData.forEach(field => {
-                        logEmbed.addFields({ name: `📝 ${field.label}`, value: field.value || 'Brak', inline: false });
+            const attachment =
+                new AttachmentBuilder(
+                    Buffer.from(
+                        header + body,
+                        'utf8'
+                    ),
+                    {
+                        name:
+                            `transkrypt-${interaction.channel.name}.txt`
+                    }
+                );
+
+            // =================================================
+            // LOGI
+            // =================================================
+
+            const logsChannel =
+                interaction.guild.channels.cache.get(
+                    LOGI_KANAL_ID
+                );
+
+            if (logsChannel) {
+
+                const logEmbed =
+                    new EmbedBuilder()
+
+                        .setColor(
+                            KOLOR_HEX
+                        )
+
+                        .setTitle(
+                            '📜 BroBox.pl | Zamknięcie ticketu'
+                        )
+
+                        .setDescription(
+                            'Poniżej znajdują się informacje dotyczące zamkniętego zgłoszenia.'
+                        )
+
+                        .addFields(
+
+                            {
+                                name:
+                                    '👤 Otwierający',
+
+                                value:
+                                    data
+                                        ? `${data.owner.tag} (\`${data.owner.id}\`)`
+                                        : 'Nieznany',
+
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    '🔒 Zamknięty przez',
+
+                                value:
+                                    `${interaction.user.tag} (\`${interaction.user.id}\`)`,
+
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    '📌 Przejęty przez',
+
+                                value:
+                                    data?.claimedBy
+                                        ? data.claimedBy.tag
+                                        : 'Nieprzejęty',
+
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    '📂 Kategoria',
+
+                                value:
+                                    data?.category ||
+                                    'Brak danych',
+
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    '📅 Otwarcie',
+
+                                value:
+                                    data
+                                        ? `<t:${Math.floor(data.createdAt.getTime() / 1000)}:F>`
+                                        : 'Brak',
+
+                                inline: true
+                            },
+
+                            {
+                                name:
+                                    '⏱️ Zamknięcie',
+
+                                value:
+                                    `<t:${Math.floor(Date.now() / 1000)}:F>`,
+
+                                inline: true
+                            }
+
+                        );
+
+                if (
+                    data?.formData?.length
+                ) {
+
+                    logEmbed.addFields({
+
+                        name:
+                            '📋 Dane formularza',
+
+                        value:
+                            data.formData
+                                .map(
+                                    field =>
+                                        `**${field.label}:** ${field.value || 'Brak'}`
+                                )
+                                .join('\n')
+                                .slice(0, 1024)
+
                     });
                 }
 
-                logEmbed.addFields({ name: KRESKA, value: `Nazwa kanału: \`${interaction.channel.name}\``, inline: false });
                 logEmbed.setTimestamp();
 
-                await logsChannel.send({ embeds: [logEmbed], files: [transcriptAttachment] });
+                await logsChannel.send({
+
+                    embeds: [
+                        logEmbed
+                    ],
+
+                    files: [
+                        attachment
+                    ]
+
+                });
             }
 
+            // =================================================
+            // USUNIĘCIE KANAŁU
+            // =================================================
+
             setTimeout(() => {
-                interaction.channel.delete().catch(() => {});
-                ticketCache.delete(interaction.channel.id);
+
+                interaction.channel
+                    .delete()
+                    .catch(() => {});
+
+                ticketCache.delete(
+                    interaction.channelId
+                );
+
             }, 5000);
         }
     });
