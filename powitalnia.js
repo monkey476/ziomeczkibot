@@ -10,7 +10,7 @@ module.exports = (client) => {
         return new EmbedBuilder()
             .setColor(jasnyZolty)
             .setAuthor({ 
-                name: `Witaj na BroBox.pl, ${member.user.username}!`, 
+                name: `Witaj na LOWHUB.PL, ${member.user.username}!`, 
                 iconURL: member.user.displayAvatarURL({ dynamic: true }) 
             })
             .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 512 }))
@@ -20,7 +20,7 @@ module.exports = (client) => {
                 { name: '📅 Kiedy dołączyłeś?', value: dataDolaczenia, inline: true }
             )
             .setFooter({ 
-                text: 'BroBox.pl - Oficjalny Discord', 
+                text: 'LOWHUB.PL - Oficjalny Discord', 
                 iconURL: member.guild.iconURL({ dynamic: true })
             })
             .setTimestamp();
