@@ -11,7 +11,7 @@ const {
 
 module.exports = (client) => {
     const kanalWeryfikacjiID = '1291469640261828618';
-    const rolaNiezweryfikowanyID = '1390649148151300176';
+    const rolaNiezweryfikowanyID = '1542971312421609533';
     const rolaUzytkownikID = '1291061962221944933';
 
     const kolorLowhub = '#65E65B';
