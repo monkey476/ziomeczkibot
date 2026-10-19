@@ -1,3 +1,4 @@
+
 const {
     ActionRowBuilder,
     StringSelectMenuBuilder,
@@ -17,8 +18,8 @@ const {
     MessageFlags
 } = require('discord.js');
 
-const KOLOR = 0xFFF275;
-const KOLOR_HEX = '#FFF275';
+const KOLOR = 0x65E65B;
+const KOLOR_HEX = '#65E65B';
 
 const KATEGORIA_ID = '1494425319862436031';
 const ROLA_ADMIN_ID = '1495094192957817025';
@@ -69,13 +70,15 @@ const ticketTypes = {
     rekrutacja: {
         label: 'Rekrutacja',
         emoji: '📝',
-        description: 'Chcesz dołączyć do ekipy BroBox.pl.'
+        description: 'Dołącz do ekipy LOWHUB.PL.'
     }
 };
 
 function isAdmin(member) {
     return Boolean(
-        member?.permissions?.has(PermissionFlagsBits.Administrator) ||
+        member?.permissions?.has(
+            PermissionFlagsBits.Administrator
+        ) ||
         member?.roles?.cache?.has(ROLA_ADMIN_ID)
     );
 }
@@ -89,10 +92,20 @@ function safeChannelName(username, userId) {
     return `ticket-${clean || userId.slice(-6)}`;
 }
 
+function createSeparator() {
+    return new SeparatorBuilder()
+        .setDivider(true)
+        .setSpacing(SeparatorSpacingSize.Small);
+}
+
+// =====================================================
+// PANEL WYBORU TICKETU
+// =====================================================
+
 function createTicketSetupPanel() {
     const selectMenu = new StringSelectMenuBuilder()
         .setCustomId('ticket_select_menu')
-        .setPlaceholder('Wybierz rodzaj zgłoszenia...')
+        .setPlaceholder('🎫 Wybierz kategorię zgłoszenia...')
         .addOptions(
             Object.entries(ticketTypes).map(([value, data]) => ({
                 label: data.label,
@@ -102,72 +115,67 @@ function createTicketSetupPanel() {
             }))
         );
 
-    const selectRow = new ActionRowBuilder().addComponents(selectMenu);
-
     const container = new ContainerBuilder()
         .setAccentColor(KOLOR)
         .addTextDisplayComponents(
             new TextDisplayBuilder().setContent(
-                '# 🎫 BroBox.pl | Centrum pomocy\n' +
-                'Witaj w oficjalnym systemie zgłoszeń.\n\n' +
-                'Wybierz kategorię poniżej, aby utworzyć prywatny kanał z administracją.\n' +
-                'Przed wysłaniem formularza przygotuj dokładny opis sytuacji i ewentualne dowody.'
+                '# 🎫 LOWHUB.PL | CENTRUM POMOCY\n' +
+                'Potrzebujesz pomocy? Jesteś w odpowiednim miejscu.\n\n' +
+                'Wybierz kategorię, aby utworzyć **prywatny ticket** ' +
+                'i skontaktować się z administracją LOWHUB.PL.'
             )
         )
-        .addSeparatorComponents(
-            new SeparatorBuilder()
-                .setDivider(true)
-                .setSpacing(SeparatorSpacingSize.Small)
-        )
+        .addSeparatorComponents(createSeparator())
         .addTextDisplayComponents(
             new TextDisplayBuilder().setContent(
-                '### 📌 Zasady zgłoszeń\n' +
-                '• Jeden użytkownik może posiadać jeden otwarty ticket.\n' +
-                '• Nie oznaczaj administracji bez potrzeby.\n' +
-                '• W zgłoszeniach gracza dodaj konkretne dowody.\n' +
-                '• Po zakończeniu sprawy ticket zostanie zamknięty.'
+                '## 📌 Zasady zgłoszeń\n' +
+                '🟢 **Jedno zgłoszenie** na użytkownika.\n' +
+                '🟢 Opisz problem dokładnie i konkretnie.\n' +
+                '🟢 W zgłoszeniach graczy dołącz dowody.\n' +
+                '🟢 Nie oznaczaj administracji bez potrzeby.\n\n' +
+                '-# LOWHUB.PL • SYSTEM ZGŁOSZEŃ'
             )
         )
-        .addSeparatorComponents(
-            new SeparatorBuilder()
-                .setDivider(true)
-                .setSpacing(SeparatorSpacingSize.Small)
-        )
+        .addSeparatorComponents(createSeparator())
         .addTextDisplayComponents(
             new TextDisplayBuilder().setContent(
-                '**Wybierz temat zgłoszenia z menu poniżej:**'
+                '**Wybierz temat zgłoszenia poniżej:**'
             )
         )
-        .addActionRowComponents(selectRow);
+        .addActionRowComponents(
+            new ActionRowBuilder().addComponents(selectMenu)
+        );
 
     return container;
 }
 
-function createTicketPanel(userId, userTag, categoryName, formData) {
+// =====================================================
+// WIADOMOŚĆ OTWARTEGO TICKETU + ANKIETA + PRZYCISKI
+// =====================================================
+
+function createTicketPanel(userId, categoryName, formData) {
     const container = new ContainerBuilder()
         .setAccentColor(KOLOR)
         .addTextDisplayComponents(
             new TextDisplayBuilder().setContent(
-                `# 🎫 BroBox.pl | ${categoryName}\n` +
-                `Witaj <@${userId}>! Twoje zgłoszenie zostało utworzone.\n\n` +
-                'Administracja otrzymała Twoje zgłoszenie. Opisz dodatkowe informacje w tym kanale, jeśli będą potrzebne.'
+                `# 🎫 LOWHUB.PL | ${categoryName}\n` +
+                `Witaj <@${userId}>!\n\n` +
+                'Twoje zgłoszenie zostało utworzone. ' +
+                'Administracja odpowie tutaj, gdy będzie dostępna.\n' +
+                'W razie potrzeby możesz dopisać dodatkowe informacje.'
             )
         )
-        .addSeparatorComponents(
-            new SeparatorBuilder()
-                .setDivider(true)
-                .setSpacing(SeparatorSpacingSize.Small)
-        )
+        .addSeparatorComponents(createSeparator())
         .addTextDisplayComponents(
             new TextDisplayBuilder().setContent(
-                '## 📋 Szczegóły zgłoszenia'
+                '## 📋 Ankieta zgłoszenia'
             )
         );
 
     for (const item of formData) {
         container.addTextDisplayComponents(
             new TextDisplayBuilder().setContent(
-                `**${item.label}:**\n${item.value || 'Brak danych'}`
+                `**${item.label}**\n${item.value || 'Nie podano'}`
             )
         );
     }
@@ -187,20 +195,20 @@ function createTicketPanel(userId, userTag, categoryName, formData) {
     );
 
     container
-        .addSeparatorComponents(
-            new SeparatorBuilder()
-                .setDivider(true)
-                .setSpacing(SeparatorSpacingSize.Small)
-        )
+        .addSeparatorComponents(createSeparator())
         .addTextDisplayComponents(
             new TextDisplayBuilder().setContent(
-                '🔔 **Administracja:** odpowiadaj konkretnie i zachowuj kulturę wypowiedzi.'
+                '-# LOWHUB.PL • Zachowuj kulturę i współpracuj z administracją.'
             )
         )
         .addActionRowComponents(buttons);
 
     return container;
 }
+
+// =====================================================
+// FORMULARZE
+// =====================================================
 
 function createModal(type) {
     const modal = new ModalBuilder();
@@ -226,11 +234,7 @@ function createModal(type) {
             .setTitle('Pomoc ogólna');
 
         modal.addComponents(
-            input(
-                'nick',
-                'Nick z Minecraft',
-                'Twój nick...'
-            ),
+            input('nick', 'Nick z Minecraft', 'Twój nick...'),
             input(
                 'opis',
                 'Opisz problem',
@@ -246,11 +250,7 @@ function createModal(type) {
             .setTitle('Problemy z kontem');
 
         modal.addComponents(
-            input(
-                'nick',
-                'Nick z Minecraft',
-                'Twój nick...'
-            ),
+            input('nick', 'Nick z Minecraft', 'Twój nick...'),
             input(
                 'typ_problemu',
                 'Typ problemu',
@@ -271,16 +271,8 @@ function createModal(type) {
             .setTitle('Współpraca');
 
         modal.addComponents(
-            input(
-                'nick',
-                'Nick / nazwa',
-                'Twój nick lub nazwa projektu...'
-            ),
-            input(
-                'link',
-                'Link do kanału / oferty',
-                'https://...'
-            ),
+            input('nick', 'Nick / nazwa', 'Twój nick lub projekt...'),
+            input('link', 'Link do kanału / oferty', 'https://...'),
             input(
                 'opis',
                 'Propozycja współpracy',
@@ -296,11 +288,7 @@ function createModal(type) {
             .setTitle('Zgłoszenie gracza');
 
         modal.addComponents(
-            input(
-                'nick',
-                'Twój nick',
-                'Twój nick...'
-            ),
+            input('nick', 'Twój nick', 'Twój nick...'),
             input(
                 'oskarzony',
                 'Nick zgłaszanego gracza',
@@ -321,16 +309,8 @@ function createModal(type) {
             .setTitle('Odwołanie od bana');
 
         modal.addComponents(
-            input(
-                'nick',
-                'Twój nick z Minecraft',
-                'Twój nick...'
-            ),
-            input(
-                'powod_bana',
-                'Powód bana',
-                'Za co otrzymałeś bana?'
-            ),
+            input('nick', 'Nick z Minecraft', 'Twój nick...'),
+            input('powod_bana', 'Powód bana', 'Za co otrzymałeś bana?'),
             input(
                 'dlaczego',
                 'Dlaczego unban?',
@@ -343,19 +323,11 @@ function createModal(type) {
     if (type === 'rekrutacja') {
         modal
             .setCustomId('modal_rekrutacja')
-            .setTitle('Rekrutacja');
+            .setTitle('Rekrutacja LOWHUB.PL');
 
         modal.addComponents(
-            input(
-                'nick',
-                'Nick z Minecraft',
-                'Twój nick...'
-            ),
-            input(
-                'wiek',
-                'Wiek',
-                'Ile masz lat?'
-            ),
+            input('nick', 'Nick z Minecraft', 'Twój nick...'),
+            input('wiek', 'Wiek', 'Ile masz lat?'),
             input(
                 'rola',
                 'Na jaką rangę aplikujesz?',
@@ -373,159 +345,197 @@ function createModal(type) {
     return modal;
 }
 
+// =====================================================
+// TRANSKRYPT ROZMOWY
+// =====================================================
+
+async function createTranscript(channel) {
+    const messages = [];
+    let lastId;
+
+    while (true) {
+        const options = { limit: 100 };
+
+        if (lastId) {
+            options.before = lastId;
+        }
+
+        const fetched = await channel.messages.fetch(options);
+
+        if (!fetched.size) break;
+
+        messages.push(...fetched.values());
+        lastId = fetched.last().id;
+
+        if (fetched.size < 100) break;
+    }
+
+    messages.reverse();
+
+    const lines = [
+        '==================================================',
+        '                 LOWHUB.PL',
+        '              TRANSKRYPT TICKETU',
+        '==================================================',
+        `Kanał: ${channel.name}`,
+        `ID kanału: ${channel.id}`,
+        `Data eksportu: ${new Date().toLocaleString('pl-PL')}`,
+        '',
+        'UWAGA: zapis obejmuje tekst wiadomości, podstawowe dane autorów,',
+        'daty, treści embedów oraz adresy URL załączników.',
+        ''
+    ];
+
+    for (const message of messages) {
+        lines.push('--------------------------------------------------');
+        lines.push(
+            `[${message.createdAt.toLocaleString('pl-PL')}] ` +
+            `${message.author.tag} (ID: ${message.author.id})`
+        );
+
+        if (message.content) {
+            lines.push(`Treść: ${message.content}`);
+        }
+
+        for (const embed of message.embeds) {
+            if (embed.title) lines.push(`Embed: ${embed.title}`);
+            if (embed.description) {
+                lines.push(`Opis embeda: ${embed.description}`);
+            }
+
+            for (const field of embed.fields || []) {
+                lines.push(`${field.name}: ${field.value}`);
+            }
+        }
+
+        if (message.attachments.size) {
+            lines.push('Załączniki:');
+
+            for (const attachment of message.attachments.values()) {
+                lines.push(`- ${attachment.name}: ${attachment.url}`);
+            }
+        }
+
+        if (message.stickers.size) {
+            lines.push(
+                'Naklejki: ' +
+                [...message.stickers.values()]
+                    .map(sticker => sticker.name)
+                    .join(', ')
+            );
+        }
+
+        if (!message.content && !message.embeds.length &&
+            !message.attachments.size && !message.stickers.size) {
+            lines.push('[Wiadomość zawierała komponenty lub inną zawartość]');
+        }
+    }
+
+    return new AttachmentBuilder(
+        Buffer.from(lines.join('\n'), 'utf8'),
+        { name: `transkrypt-${channel.name}.txt` }
+    );
+}
+
+// =====================================================
+// BOT
+// =====================================================
+
 module.exports = (client) => {
 
-    // =====================================================
     // PANEL STARTOWY
-    // =====================================================
-
     client.on('messageCreate', async (message) => {
         if (message.author.bot) return;
+        if (message.content !== '!setup-tickety') return;
 
-        if (message.content === '!setup-tickety') {
-
-            if (!isAdmin(message.member)) {
-                return message.reply(
-                    '❌ Nie posiadasz uprawnień do użycia tej komendy.'
-                );
-            }
-
-            try {
-
-                await message.channel.send({
-                    components: [
-                        createTicketSetupPanel()
-                    ],
-                    flags: MessageFlags.IsComponentsV2
-                });
-
-                if (message.deletable) {
-                    await message.delete().catch(() => {});
-                }
-
-            } catch (error) {
-
-                console.error(
-                    '❌ Błąd panelu ticketów:',
-                    error
-                );
-
-                await message.reply(
-                    '❌ Nie udało się wysłać panelu ticketów. Sprawdź wersję discord.js.'
-                );
-            }
-        }
-    });
-
-    // =====================================================
-    // SELECT MENU
-    // =====================================================
-
-    client.on('interactionCreate', async (interaction) => {
-
-        if (!interaction.isStringSelectMenu()) return;
-
-        if (interaction.customId !== 'ticket_select_menu') {
-            return;
-        }
-
-        const type = interaction.values[0];
-
-        if (!ticketTypes[type]) return;
-
-        await interaction.showModal(
-            createModal(type)
-        );
-    });
-
-    // =====================================================
-    // MODALE
-    // =====================================================
-
-    client.on('interactionCreate', async (interaction) => {
-
-        if (!interaction.isModalSubmit()) return;
-
-        if (!interaction.customId.startsWith('modal_')) {
-            return;
+        if (!isAdmin(message.member)) {
+            return message.reply(
+                '❌ Nie posiadasz uprawnień do użycia tej komendy.'
+            );
         }
 
         try {
-
-            await interaction.deferReply({
-                ephemeral: true
+            await message.channel.send({
+                components: [createTicketSetupPanel()],
+                flags: MessageFlags.IsComponentsV2
             });
+
+            if (message.deletable) {
+                await message.delete().catch(() => {});
+            }
+        } catch (error) {
+            console.error('Błąd panelu ticketów:', error);
+
+            await message.reply(
+                '❌ Nie udało się wysłać panelu ticketów. Sprawdź logi Rendera.'
+            );
+        }
+    });
+
+    // WYBÓR KATEGORII
+    client.on('interactionCreate', async (interaction) => {
+        if (!interaction.isStringSelectMenu()) return;
+        if (interaction.customId !== 'ticket_select_menu') return;
+
+        const type = interaction.values[0];
+        if (!ticketTypes[type]) return;
+
+        await interaction.showModal(createModal(type));
+    });
+
+    // WYSŁANIE FORMULARZA I UTWORZENIE KANAŁU
+    client.on('interactionCreate', async (interaction) => {
+        if (!interaction.isModalSubmit()) return;
+        if (!interaction.customId.startsWith('modal_')) return;
+
+        try {
+            await interaction.deferReply({ ephemeral: true });
 
             const categoryKey =
                 interaction.customId.replace('modal_', '');
 
             const categoryName =
-                ticketTypes[categoryKey]?.label ||
-                'Zgłoszenie';
+                ticketTypes[categoryKey]?.label || 'Zgłoszenie';
 
-            const channelName =
-                safeChannelName(
-                    interaction.user.username,
-                    interaction.user.id
-                );
+            const channelName = safeChannelName(
+                interaction.user.username,
+                interaction.user.id
+            );
 
-            const existing =
-                interaction.guild.channels.cache.find(
-                    channel =>
-                        channel.name === channelName
-                );
+            const existing = interaction.guild.channels.cache.find(
+                channel => channel.name === channelName
+            );
 
             if (existing) {
-
                 return interaction.editReply({
-                    content:
-                        `❌ Masz już otwarty ticket: ${existing}`
+                    content: `❌ Masz już otwarty ticket: ${existing}`
                 });
             }
 
             const formData = [];
 
             interaction.fields.fields.forEach(field => {
-
                 formData.push({
                     name: field.customId,
-                    label:
-                        fieldLabels[field.customId] ||
-                        field.customId,
+                    label: fieldLabels[field.customId] || field.customId,
                     value: field.value
                 });
-
             });
-
-            // =================================================
-            // TWORZENIE KANAŁU
-            // =================================================
 
             const ticketChannel =
                 await interaction.guild.channels.create({
-
                     name: channelName,
-
                     type: ChannelType.GuildText,
-
                     parent: KATEGORIA_ID,
-
                     topic:
-                        `Ticket ${categoryName} | Otworzył: ${interaction.user.tag}`,
-
+                        `LOWHUB.PL | ${categoryName} | OwnerID:${interaction.user.id}`,
                     permissionOverwrites: [
-
                         {
                             id: interaction.guild.id,
-
-                            deny: [
-                                PermissionFlagsBits.ViewChannel
-                            ]
+                            deny: [PermissionFlagsBits.ViewChannel]
                         },
-
                         {
                             id: interaction.user.id,
-
                             allow: [
                                 PermissionFlagsBits.ViewChannel,
                                 PermissionFlagsBits.SendMessages,
@@ -534,10 +544,8 @@ module.exports = (client) => {
                                 PermissionFlagsBits.ReadMessageHistory
                             ]
                         },
-
                         {
                             id: ROLA_ADMIN_ID,
-
                             allow: [
                                 PermissionFlagsBits.ViewChannel,
                                 PermissionFlagsBits.SendMessages,
@@ -546,71 +554,46 @@ module.exports = (client) => {
                                 PermissionFlagsBits.ReadMessageHistory
                             ]
                         }
-
                     ]
                 });
 
-            ticketCache.set(
-                ticketChannel.id,
-                {
-                    owner: interaction.user,
-                    category: categoryName,
-                    formData,
-                    createdAt: new Date(),
-                    claimedBy: null
-                }
-            );
+            ticketCache.set(ticketChannel.id, {
+                owner: interaction.user,
+                category: categoryName,
+                formData,
+                createdAt: new Date(),
+                claimedBy: null
+            });
 
-            // =================================================
-            // WIADOMOŚĆ TICKETU
-            // =================================================
-
+            // Components V2: tekst i wzmianki umieszczamy w kontenerze.
             await ticketChannel.send({
-
-                content:
-                    `<@${interaction.user.id}> | <@&${ROLA_ADMIN_ID}>`,
-
                 components: [
                     createTicketPanel(
                         interaction.user.id,
-                        interaction.user.tag,
                         categoryName,
                         formData
                     )
                 ],
-
-                flags:
-                    MessageFlags.IsComponentsV2
+                flags: MessageFlags.IsComponentsV2,
+                allowedMentions: {
+                    users: [interaction.user.id]
+                }
             });
 
             await interaction.editReply({
-
-                content:
-                    `✅ Ticket został utworzony: ${ticketChannel}`
+                content: `✅ Ticket został utworzony: ${ticketChannel}`
             });
 
         } catch (error) {
-
-            console.error(
-                '❌ Błąd tworzenia ticketu:',
-                error
-            );
+            console.error('Błąd tworzenia ticketu:', error);
 
             const text =
-                '❌ Wystąpił błąd podczas tworzenia ticketu. ' +
-                'Sprawdź ID kategorii, ID roli, uprawnienia bota i wersję discord.js.';
+                '❌ Nie udało się utworzyć ticketu. ' +
+                'Sprawdź ID kategorii, ID roli i uprawnienia bota.';
 
-            if (
-                interaction.deferred ||
-                interaction.replied
-            ) {
-
-                await interaction.editReply({
-                    content: text
-                }).catch(() => {});
-
+            if (interaction.deferred || interaction.replied) {
+                await interaction.editReply({ content: text }).catch(() => {});
             } else {
-
                 await interaction.reply({
                     content: text,
                     ephemeral: true
@@ -619,332 +602,181 @@ module.exports = (client) => {
         }
     });
 
-    // =====================================================
-    // PRZYCISKI
-    // =====================================================
-
+    // PRZEJMOWANIE I ZAMYKANIE TICKETÓW
     client.on('interactionCreate', async (interaction) => {
-
         if (!interaction.isButton()) return;
 
-        if (
-            ![
-                'claim_ticket',
-                'close_ticket'
-            ].includes(interaction.customId)
-        ) {
+        if (!['claim_ticket', 'close_ticket'].includes(interaction.customId)) {
             return;
         }
 
-        const data =
-            ticketCache.get(
-                interaction.channelId
-            );
+        const channel = interaction.channel;
+        const data = ticketCache.get(interaction.channelId);
 
-        // =================================================
         // PRZEJĘCIE
-        // =================================================
-
-        if (
-            interaction.customId ===
-            'claim_ticket'
-        ) {
-
+        if (interaction.customId === 'claim_ticket') {
             if (!isAdmin(interaction.member)) {
-
                 return interaction.reply({
-                    content:
-                        '❌ Tylko administracja może przejmować tickety.',
+                    content: '❌ Tylko administracja może przejmować tickety.',
                     ephemeral: true
                 });
             }
 
             if (data?.claimedBy) {
-
                 return interaction.reply({
                     content:
-                        `❌ Ticket został już przejęty przez <@${data.claimedBy.id}>.`,
+                        `❌ Ticket jest już przejęty przez <@${data.claimedBy.id}>.`,
                     ephemeral: true
                 });
             }
 
-            if (data) {
-                data.claimedBy =
-                    interaction.user;
-            }
+            if (data) data.claimedBy = interaction.user;
+
+            const claimEmbed = new EmbedBuilder()
+                .setColor(KOLOR)
+                .setTitle('📌 Ticket przejęty')
+                .setDescription(
+                    `Administracja przejęła zgłoszenie.\n\n` +
+                    `**Opiekun:** <@${interaction.user.id}>\n` +
+                    `**Serwer:** LOWHUB.PL`
+                )
+                .setTimestamp();
 
             return interaction.reply({
-                content:
-                    `📌 **Ticket został przejęty przez:** <@${interaction.user.id}>`
+                embeds: [claimEmbed]
             });
         }
 
-        // =================================================
         // ZAMKNIĘCIE
-        // =================================================
-
-        if (
-            interaction.customId ===
-            'close_ticket'
-        ) {
-
+        if (interaction.customId === 'close_ticket') {
             if (
                 !isAdmin(interaction.member) &&
                 data &&
-                interaction.user.id !==
-                    data.owner.id
+                interaction.user.id !== data.owner.id
             ) {
-
                 return interaction.reply({
-                    content:
-                        '❌ Nie masz uprawnień do zamknięcia tego ticketu.',
+                    content: '❌ Nie masz uprawnień do zamknięcia tego ticketu.',
                     ephemeral: true
                 });
             }
 
-            await interaction.reply(
-                '🔒 Rozpoczęto zamykanie ticketu. Generuję transkrypt...'
-            );
+            await interaction.deferReply();
 
-            // =================================================
-            // TRANSKRYPT
-            // =================================================
-
-            let allMessages = [];
-
-            let lastId;
+            const closedAt = new Date();
+            let transcript;
 
             try {
-
-                while (true) {
-
-                    const options = {
-                        limit: 100
-                    };
-
-                    if (lastId) {
-                        options.before =
-                            lastId;
-                    }
-
-                    const fetched =
-                        await interaction.channel.messages.fetch(
-                            options
-                        );
-
-                    if (!fetched.size) {
-                        break;
-                    }
-
-                    allMessages.push(
-                        ...fetched.values()
-                    );
-
-                    lastId =
-                        fetched.last().id;
-                }
-
+                transcript = await createTranscript(channel);
             } catch (error) {
+                console.error('Błąd tworzenia transkryptu:', error);
 
-                console.error(
-                    '❌ Błąd pobierania transkryptu:',
-                    error
+                return interaction.editReply(
+                    '❌ Nie udało się wygenerować transkryptu. Kanał nie został usunięty.'
                 );
             }
 
-            allMessages.reverse();
-
-            const header =
-                '==================================================\n' +
-                '                 BROBOX.PL\n' +
-                '              TRANSKRYPT TICKETU\n' +
-                '==================================================\n' +
-                `Kanał: ${interaction.channel.name}\n` +
-                `Data zamknięcia: ${new Date().toLocaleString('pl-PL')}\n\n`;
-
-            const body =
-                allMessages
-                    .map(message => {
-
-                        const time =
-                            message.createdAt.toLocaleString(
-                                'pl-PL'
-                            );
-
-                        const content =
-                            message.content ||
-                            '[Embed / Components / Załącznik]';
-
-                        return (
-                            `[${time}] ` +
-                            `${message.author.tag}: ` +
-                            content
-                        );
-
-                    })
-                    .join(
-                        '\n--------------------------------------------------\n'
-                    );
-
-            const attachment =
-                new AttachmentBuilder(
-                    Buffer.from(
-                        header + body,
-                        'utf8'
-                    ),
-                    {
-                        name:
-                            `transkrypt-${interaction.channel.name}.txt`
-                    }
-                );
-
-            // =================================================
-            // LOGI
-            // =================================================
-
             const logsChannel =
-                interaction.guild.channels.cache.get(
-                    LOGI_KANAL_ID
+                interaction.guild.channels.cache.get(LOGI_KANAL_ID);
+
+            if (!logsChannel) {
+                return interaction.editReply(
+                    '❌ Nie znaleziono kanału logów. Ticket nie został usunięty, aby nie utracić rozmowy.'
                 );
+            }
 
-            if (logsChannel) {
+            const ownerId =
+                data?.owner?.id ||
+                channel.topic?.match(/OwnerID:(\d+)/)?.[1];
 
-                const logEmbed =
-                    new EmbedBuilder()
+            const ownerTag = data?.owner?.tag ||
+                (ownerId ? `<@${ownerId}>` : 'Nieznany');
 
-                        .setColor(
-                            KOLOR_HEX
-                        )
+            const logEmbed = new EmbedBuilder()
+                .setColor(KOLOR)
+                .setTitle('📜 LOWHUB.PL | Zamknięcie ticketu')
+                .setDescription(
+                    'Zgłoszenie zostało zamknięte. Transkrypt rozmowy znajduje się w załączniku.'
+                )
+                .addFields(
+                    {
+                        name: '🎫 Kanał',
+                        value: `#${channel.name}\nID: \`${channel.id}\``,
+                        inline: true
+                    },
+                    {
+                        name: '👤 Otwierający',
+                        value: `${ownerTag}${ownerId ? `\nID: \`${ownerId}\`` : ''}`,
+                        inline: true
+                    },
+                    {
+                        name: '🔒 Zamknięty przez',
+                        value: `${interaction.user.tag}\nID: \`${interaction.user.id}\``,
+                        inline: true
+                    },
+                    {
+                        name: '📌 Przejęty przez',
+                        value: data?.claimedBy
+                            ? `${data.claimedBy.tag}\nID: \`${data.claimedBy.id}\``
+                            : 'Nieprzejęty',
+                        inline: true
+                    },
+                    {
+                        name: '📂 Kategoria',
+                        value: data?.category || 'Brak danych',
+                        inline: true
+                    },
+                    {
+                        name: '🕒 Otwarcie',
+                        value: data?.createdAt
+                            ? `<t:${Math.floor(data.createdAt.getTime() / 1000)}:F>`
+                            : 'Nieznana data',
+                        inline: true
+                    },
+                    {
+                        name: '🔐 Zamknięcie',
+                        value: `<t:${Math.floor(closedAt.getTime() / 1000)}:F>`,
+                        inline: true
+                    }
+                )
+                .setFooter({
+                    text: 'LOWHUB.PL • SYSTEM TICKETÓW'
+                })
+                .setTimestamp(closedAt);
 
-                        .setTitle(
-                            '📜 BroBox.pl | Zamknięcie ticketu'
-                        )
+            if (data?.formData?.length) {
+                const formularz = data.formData
+                    .map(item => `**${item.label}:** ${item.value || 'Brak'}`)
+                    .join('\n')
+                    .slice(0, 1024);
 
-                        .setDescription(
-                            'Poniżej znajdują się informacje dotyczące zamkniętego zgłoszenia.'
-                        )
-
-                        .addFields(
-
-                            {
-                                name:
-                                    '👤 Otwierający',
-
-                                value:
-                                    data
-                                        ? `${data.owner.tag} (\`${data.owner.id}\`)`
-                                        : 'Nieznany',
-
-                                inline: true
-                            },
-
-                            {
-                                name:
-                                    '🔒 Zamknięty przez',
-
-                                value:
-                                    `${interaction.user.tag} (\`${interaction.user.id}\`)`,
-
-                                inline: true
-                            },
-
-                            {
-                                name:
-                                    '📌 Przejęty przez',
-
-                                value:
-                                    data?.claimedBy
-                                        ? data.claimedBy.tag
-                                        : 'Nieprzejęty',
-
-                                inline: true
-                            },
-
-                            {
-                                name:
-                                    '📂 Kategoria',
-
-                                value:
-                                    data?.category ||
-                                    'Brak danych',
-
-                                inline: true
-                            },
-
-                            {
-                                name:
-                                    '📅 Otwarcie',
-
-                                value:
-                                    data
-                                        ? `<t:${Math.floor(data.createdAt.getTime() / 1000)}:F>`
-                                        : 'Brak',
-
-                                inline: true
-                            },
-
-                            {
-                                name:
-                                    '⏱️ Zamknięcie',
-
-                                value:
-                                    `<t:${Math.floor(Date.now() / 1000)}:F>`,
-
-                                inline: true
-                            }
-
-                        );
-
-                if (
-                    data?.formData?.length
-                ) {
-
-                    logEmbed.addFields({
-
-                        name:
-                            '📋 Dane formularza',
-
-                        value:
-                            data.formData
-                                .map(
-                                    field =>
-                                        `**${field.label}:** ${field.value || 'Brak'}`
-                                )
-                                .join('\n')
-                                .slice(0, 1024)
-
-                    });
-                }
-
-                logEmbed.setTimestamp();
-
-                await logsChannel.send({
-
-                    embeds: [
-                        logEmbed
-                    ],
-
-                    files: [
-                        attachment
-                    ]
-
+                logEmbed.addFields({
+                    name: '📋 Dane formularza',
+                    value: formularz || 'Brak danych'
                 });
             }
 
-            // =================================================
-            // USUNIĘCIE KANAŁU
-            // =================================================
+            try {
+                await logsChannel.send({
+                    embeds: [logEmbed],
+                    files: [transcript]
+                });
+            } catch (error) {
+                console.error('Błąd wysyłania logów:', error);
 
-            setTimeout(() => {
-
-                interaction.channel
-                    .delete()
-                    .catch(() => {});
-
-                ticketCache.delete(
-                    interaction.channelId
+                return interaction.editReply(
+                    '❌ Nie udało się wysłać logów. Ticket nie został usunięty.'
                 );
+            }
 
+            await interaction.editReply(
+                '🔒 Ticket zamknięty. Transkrypt został wysłany do logów.'
+            );
+
+            setTimeout(async () => {
+                await channel.delete('Ticket zamknięty — LOWHUB.PL')
+                    .catch(error => console.error('Błąd usuwania kanału:', error));
+
+                ticketCache.delete(channel.id);
             }, 5000);
         }
     });
