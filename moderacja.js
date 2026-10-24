@@ -1,177 +1,521 @@
-const { 
-    EmbedBuilder, 
-    SlashCommandBuilder, 
-    PermissionFlagsBits, 
-    ActionRowBuilder, 
-    ButtonBuilder, 
-    ButtonStyle, 
-    ModalBuilder, 
-    TextInputBuilder, 
+
+const {
+    EmbedBuilder,
+    SlashCommandBuilder,
+    PermissionFlagsBits,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    ModalBuilder,
+    TextInputBuilder,
     TextInputStyle,
-    MessageFlags 
-} = require('discord.js');
+    MessageFlags,
+} = require("discord.js");
 
 module.exports = (client) => {
-    // --- KONFIGURACJA RÓL I KANAŁÓW ---
+    const BRAND = "LOWHUB.PL";
+    const GREEN = 0x65E65B;
+    const RED = 0xED4245;
+    const YELLOW = 0xFEE75C;
+    const BLUE = 0x3498DB;
+
     const role = {
-        warn: '1540162521678221362',
-        tempmute: '1540162523884683384',
-        kick: '1540165382348869682',
-        tempban: '1540165382734749746',
-        ban: '1540165383372144700',
-        all: '1495094192957817025'
-    };
-    
-    const kanalOdwolanID = '1542546740719124561';
-    const firmowyKolor = '#ED4245'; 
-
-    const maUprawnienia = (member, wymaganaRola) => {
-        return member.permissions.has(PermissionFlagsBits.Administrator) || 
-               member.roles.cache.has(role.all) || 
-               member.roles.cache.has(wymaganaRola);
+        warn: "1540162521678221362",
+        tempmute: "1540162523884683384",
+        kick: "1540165382348869682",
+        tempban: "1540165382734749746",
+        ban: "1540165383372144700",
+        all: "1495094192957817025",
     };
 
-    // --- REJESTRACJA KOMEND SLASH ---
-    client.on('ready', async () => {
-        console.log(`Moduł moderacji załadowany dla BroBox.pl!`);
-        try { await client.application.commands.set([]); } catch (err) {}
+    const kanalOdwolanID = "1542546740719124561";
 
-        const komendy = [
-            new SlashCommandBuilder().setName('warn').setDescription('Ostrzega gracza')
-                .addUserOption(opt => opt.setName('gracz').setDescription('Wybierz gracza').setRequired(true))
-                .addStringOption(opt => opt.setName('powod').setDescription('Powód ostrzeżenia').setRequired(false)),
-            new SlashCommandBuilder().setName('kick').setDescription('Wyrzuca gracza z serwera')
-                .addUserOption(opt => opt.setName('gracz').setDescription('Wybierz gracza').setRequired(true))
-                .addStringOption(opt => opt.setName('powod').setDescription('Powód wyrzucenia').setRequired(false)),
-            new SlashCommandBuilder().setName('ban').setDescription('Banuje gracza na stałe')
-                .addUserOption(opt => opt.setName('gracz').setDescription('Wybierz gracza').setRequired(true))
-                .addStringOption(opt => opt.setName('powod').setDescription('Powód bana').setRequired(false)),
-            new SlashCommandBuilder().setName('tempmute').setDescription('Tymczasowe wyciszenie gracza (minuty)')
-                .addUserOption(opt => opt.setName('gracz').setDescription('Wybierz gracza').setRequired(true))
-                .addIntegerOption(opt => opt.setName('czas').setDescription('Czas wyciszenia w minutach').setRequired(true))
-                .addStringOption(opt => opt.setName('powod').setDescription('Powód wyciszenia').setRequired(false))
-        ];
+    const komendy = [
+        new SlashCommandBuilder()
+            .setName("warn")
+            .setDescription("Nadaj użytkownikowi ostrzeżenie")
+            .addUserOption(o =>
+                o.setName("gracz")
+                    .setDescription("Użytkownik")
+                    .setRequired(true)
+            )
+            .addStringOption(o =>
+                o.setName("powod")
+                    .setDescription("Powód ostrzeżenia")
+                    .setMaxLength(500)
+            ),
 
-        client.guilds.cache.forEach(async (guild) => {
-            await guild.commands.set(komendy);
-        });
+        new SlashCommandBuilder()
+            .setName("kick")
+            .setDescription("Wyrzuć użytkownika z serwera")
+            .addUserOption(o =>
+                o.setName("gracz")
+                    .setDescription("Użytkownik")
+                    .setRequired(true)
+            )
+            .addStringOption(o =>
+                o.setName("powod")
+                    .setDescription("Powód wyrzucenia")
+                    .setMaxLength(500)
+            ),
+
+        new SlashCommandBuilder()
+            .setName("ban")
+            .setDescription("Zbanuj użytkownika na serwerze")
+            .addUserOption(o =>
+                o.setName("gracz")
+                    .setDescription("Użytkownik")
+                    .setRequired(true)
+            )
+            .addStringOption(o =>
+                o.setName("powod")
+                    .setDescription("Powód bana")
+                    .setMaxLength(500)
+            ),
+
+        new SlashCommandBuilder()
+            .setName("tempmute")
+            .setDescription("Wycisz użytkownika na określony czas")
+            .addUserOption(o =>
+                o.setName("gracz")
+                    .setDescription("Użytkownik")
+                    .setRequired(true)
+            )
+            .addIntegerOption(o =>
+                o.setName("czas")
+                    .setDescription("Czas wyciszenia w minutach")
+                    .setMinValue(1)
+                    .setMaxValue(40320)
+                    .setRequired(true)
+            )
+            .addStringOption(o =>
+                o.setName("powod")
+                    .setDescription("Powód wyciszenia")
+                    .setMaxLength(500)
+            ),
+    ].map(c => c.toJSON());
+
+    const wymaganeRole = {
+        warn: role.warn,
+        kick: role.kick,
+        ban: role.ban,
+        tempmute: role.tempmute,
+    };
+
+    function maUprawnienia(member, wymaganaRola) {
+        if (!member) return false;
+
+        return (
+            member.permissions?.has(PermissionFlagsBits.Administrator) ||
+            member.roles?.cache?.has(role.all) ||
+            member.roles?.cache?.has(wymaganaRola)
+        );
+    }
+
+    function embed(title, description, color = GREEN) {
+        return new EmbedBuilder()
+            .setColor(color)
+            .setAuthor({
+                name: `${BRAND} • MODERACJA`,
+                iconURL: client.user.displayAvatarURL(),
+            })
+            .setTitle(title)
+            .setDescription(description)
+            .setFooter({ text: BRAND })
+            .setTimestamp();
+    }
+
+    async function odpowiedz(interaction, content, ephemeral = true) {
+        const payload = {
+            content,
+            flags: ephemeral ? MessageFlags.Ephemeral : undefined,
+        };
+
+        if (interaction.replied || interaction.deferred) {
+            return interaction.followUp(payload).catch(() => {});
+        }
+
+        return interaction.reply(payload).catch(() => {});
+    }
+
+    // Rejestruj tylko własne komendy. Nie usuwaj komend innych modułów.
+    client.once("ready", async () => {
+        try {
+            for (const guild of client.guilds.cache.values()) {
+                const existing = await guild.commands.fetch();
+
+                for (const data of komendy) {
+                    const old = existing.find(c => c.name === data.name);
+
+                    if (old) {
+                        await old.edit(data);
+                    } else {
+                        await guild.commands.create(data);
+                    }
+                }
+            }
+
+            console.log("[MODERACJA] Komendy LOWHUB.PL zarejestrowane.");
+        } catch (error) {
+            console.error("[MODERACJA] Błąd rejestracji komend:", error);
+        }
     });
 
-    // --- OBSŁUGA KOMEND I PRZYCISKÓW ---
-    client.on('interactionCreate', async (interaction) => {
-        
-        // 1. KOMENDY SLASH
-        if (interaction.isChatInputCommand()) {
-            const { commandName, options, member, guild } = interaction;
-            const targetUser = options.getUser('gracz');
-            const targetMember = guild.members.cache.get(targetUser.id);
-            const powod = options.getString('powod') || 'Brak powodu';
+    client.on("interactionCreate", async interaction => {
+        try {
+            // Formularz odwołania nie jest komendą slash.
+            if (
+                interaction.isModalSubmit() &&
+                interaction.customId === "modal_odwolanie_ban"
+            ) {
+                const tekst = interaction.fields
+                    .getTextInputValue("powod_odwolania")
+                    .trim();
 
-            if (!targetMember) {
-                return interaction.reply({ content: 'Nie znaleziono tego gracza na serwerze.', flags: MessageFlags.Ephemeral }).catch(console.error);
-            }
+                const kanal = await client.channels
+                    .fetch(kanalOdwolanID)
+                    .catch(() => null);
 
-            // --- BAN ---
-            if (commandName === 'ban') {
-                if (!maUprawnienia(member, role.ban)) return interaction.reply({ content: '❌ Nie masz uprawnień!', flags: MessageFlags.Ephemeral }).catch(console.error);
-
-                try {
-                    await targetMember.ban({ reason: `Zbanowany przez: ${member.user.tag} | Powód: ${powod}` });
-                } catch (error) {
-                    return interaction.reply({ content: '❌ **Błąd:** Nie mogłem zbanować tego gracza! Upewnij się, że rola bota jest wyżej w ustawieniach serwera.', flags: MessageFlags.Ephemeral }).catch(console.error);
+                if (!kanal || !kanal.isTextBased()) {
+                    return odpowiedz(
+                        interaction,
+                        "Nie udało się wysłać odwołania. Skontaktuj się z administracją."
+                    );
                 }
 
-                await interaction.reply({ content: `✅ Zbanowano gracza **${targetUser.tag}**. Powód: ${powod}.` }).catch(console.error);
-
-                const dmEmbed = new EmbedBuilder().setColor(firmowyKolor).setTitle('🔨 Zostałeś zbanowany na BroBox.pl').addFields({ name: 'Administrator', value: member.user.tag, inline: true },{ name: 'Powód', value: powod, inline: true }).setFooter({ text: 'Jeśli uważasz, że to błąd, użyj przycisku poniżej.' });
-                const odwolajPrzycisk = new ButtonBuilder().setCustomId('przycisk_odwolanie_ban').setLabel('Odwołaj się od bana').setEmoji('📝').setStyle(ButtonStyle.Primary);
-                const row = new ActionRowBuilder().addComponents(odwolajPrzycisk);
-                try { await targetUser.send({ embeds: [dmEmbed], components: [row] }); } catch (err) {}
-            }
-
-            // --- TEMPMUTE ---
-            if (commandName === 'tempmute') {
-                if (!maUprawnienia(member, role.tempmute)) return interaction.reply({ content: '❌ Nie masz uprawnień!', flags: MessageFlags.Ephemeral }).catch(console.error);
-
-                const czasMinuty = options.getInteger('czas');
-                const czasMs = czasMinuty * 60 * 1000;
-
-                try {
-                    await targetMember.timeout(czasMs, `Wyciszony przez: ${member.user.tag} | Powód: ${powod}`);
-                } catch (error) {
-                    return interaction.reply({ content: '❌ **Błąd:** Nie mogłem wyciszyć tego gracza! Upewnij się, że rola bota jest wyżej w ustawieniach serwera.', flags: MessageFlags.Ephemeral }).catch(console.error);
-                }
-
-                await interaction.reply({ content: `✅ Wyciszono gracza **${targetUser.tag}** na **${czasMinuty} min**. Powód: ${powod}.` }).catch(console.error);
-
-                const dmEmbed = new EmbedBuilder().setColor('#F1C40F').setTitle('🔇 Zostałeś wyciszony na BroBox.pl').addFields({ name: 'Czas trwania', value: `${czasMinuty} min`, inline: true },{ name: 'Administrator', value: member.user.tag, inline: true },{ name: 'Powód', value: powod, inline: false });
-                try { await targetUser.send({ embeds: [dmEmbed] }); } catch (err) {}
-            }
-
-            // --- WARN ---
-            if (commandName === 'warn') {
-                if (!maUprawnienia(member, role.warn)) return interaction.reply({ content: '❌ Nie masz uprawnień!', flags: MessageFlags.Ephemeral }).catch(console.error);
-
-                await interaction.reply({ content: `✅ Ostrzeżono gracza **${targetUser.tag}**. Powód: ${powod}.` }).catch(console.error);
-
-                const dmEmbed = new EmbedBuilder().setColor('#FEE75C').setTitle('⚠️ Otrzymałeś ostrzeżenie na BroBox.pl').addFields({ name: 'Administrator', value: member.user.tag, inline: true },{ name: 'Powód', value: powod, inline: true });
-                try { await targetUser.send({ embeds: [dmEmbed] }); } catch (err) {}
-            }
-
-            // --- KICK ---
-            if (commandName === 'kick') {
-                if (!maUprawnienia(member, role.kick)) return interaction.reply({ content: '❌ Nie masz uprawnień!', flags: MessageFlags.Ephemeral }).catch(console.error);
-
-                try {
-                    await targetMember.kick(`Wyrzucony przez: ${member.user.tag} | Powód: ${powod}`);
-                } catch (error) {
-                    return interaction.reply({ content: '❌ **Błąd:** Nie mogłem wyrzucić tego gracza! Upewnij się, że rola bota jest wyżej w ustawieniach serwera.', flags: MessageFlags.Ephemeral }).catch(console.error);
-                }
-
-                await interaction.reply({ content: `✅ Wyrzucono gracza **${targetUser.tag}**. Powód: ${powod}.` }).catch(console.error);
-
-                const dmEmbed = new EmbedBuilder().setColor('#E67E22').setTitle('🚪 Zostałeś wyrzucony z BroBox.pl').addFields({ name: 'Administrator', value: member.user.tag, inline: true },{ name: 'Powód', value: powod, inline: true });
-                try { await targetUser.send({ embeds: [dmEmbed] }); } catch (err) {}
-            }
-        }
-
-        // 2. PRZYCISK ODWOŁANIA W PV
-        if (interaction.isButton() && interaction.customId === 'przycisk_odwolanie_ban') {
-            const formularz = new ModalBuilder()
-                .setCustomId('modal_odwolanie_ban')
-                .setTitle('Odwołanie od Bana');
-
-            const poleTekstowe = new TextInputBuilder()
-                .setCustomId('powod_odwolania')
-                .setLabel('Dlaczego powinniśmy Cię odbanować?')
-                .setStyle(TextInputStyle.Paragraph)
-                .setPlaceholder('Opisz dokładnie swoją sytuację...')
-                .setMinLength(10)
-                .setMaxLength(1000)
-                .setRequired(true);
-
-            formularz.addComponents(new ActionRowBuilder().addComponents(poleTekstowe));
-            await interaction.showModal(formularz).catch(console.error);
-        }
-
-        // 3. WYSŁANIE FORMULARZA Z ODWOŁANIEM
-        if (interaction.isModalSubmit() && interaction.customId === 'modal_odwolanie_ban') {
-            const tekstOdwolania = interaction.fields.getTextInputValue('powod_odwolania');
-            const kanalOdwolan = client.channels.cache.get(kanalOdwolanID);
-
-            if (kanalOdwolan) {
-                const embedOdwolania = new EmbedBuilder()
-                    .setColor('#3498DB')
-                    .setTitle('📝 Nowe odwołanie od bana')
+                const odwolanie = new EmbedBuilder()
+                    .setColor(BLUE)
+                    .setAuthor({
+                        name: `${BRAND} • ODWOŁANIA`,
+                        iconURL: client.user.displayAvatarURL(),
+                    })
+                    .setTitle("Nowe odwołanie od bana")
                     .setThumbnail(interaction.user.displayAvatarURL())
                     .addFields(
-                        { name: 'Gracz', value: `${interaction.user.tag} (<@${interaction.user.id}>)`, inline: false },
-                        { name: 'Treść odwołania', value: tekstOdwolania, inline: false }
+                        {
+                            name: "Użytkownik",
+                            value: `${interaction.user.tag}\nID: ${interaction.user.id}`,
+                            inline: true,
+                        },
+                        {
+                            name: "Treść odwołania",
+                            value: tekst.slice(0, 1024),
+                            inline: false,
+                        }
                     )
+                    .setFooter({ text: BRAND })
                     .setTimestamp();
 
-                await kanalOdwolan.send({ embeds: [embedOdwolania] }).catch(console.error);
-                await interaction.reply({ content: '✅ Twoje odwołanie zostało pomyślnie wysłane do administracji.', flags: MessageFlags.Ephemeral }).catch(console.error);
+                await kanal.send({ embeds: [odwolanie] });
+
+                return odpowiedz(
+                    interaction,
+                    "✅ Twoje odwołanie zostało wysłane do administracji."
+                );
+            }
+
+            // Przycisk działa również w prywatnej wiadomości.
+            if (
+                interaction.isButton() &&
+                interaction.customId === "przycisk_odwolanie_ban"
+            ) {
+                const formularz = new ModalBuilder()
+                    .setCustomId("modal_odwolanie_ban")
+                    .setTitle("Odwołanie od bana");
+
+                const pole = new TextInputBuilder()
+                    .setCustomId("powod_odwolania")
+                    .setLabel("Dlaczego mamy Cię odbanować?")
+                    .setStyle(TextInputStyle.Paragraph)
+                    .setPlaceholder("Opisz swoją sytuację...")
+                    .setMinLength(10)
+                    .setMaxLength(1000)
+                    .setRequired(true);
+
+                formularz.addComponents(
+                    new ActionRowBuilder().addComponents(pole)
+                );
+
+                return await interaction.showModal(formularz);
+            }
+
+            // KLUCZOWA POPRAWKA:
+            // Ignoruj przyciski i komendy należące do innych modułów.
+            if (!interaction.isChatInputCommand()) return;
+
+            const commandName = interaction.commandName;
+
+            // Moderacja obsługuje tylko te cztery komendy.
+            if (!Object.hasOwn(wymaganeRole, commandName)) return;
+
+            if (!interaction.inGuild() || !interaction.guild) {
+                return odpowiedz(
+                    interaction,
+                    "Ta komenda działa tylko na serwerze."
+                );
+            }
+
+            const member = interaction.member;
+
+            if (!maUprawnienia(member, wymaganeRole[commandName])) {
+                return odpowiedz(
+                    interaction,
+                    "❌ Nie masz uprawnień do użycia tej komendy."
+                );
+            }
+
+            const targetUser = interaction.options.getUser("gracz");
+
+            // Dodatkowe zabezpieczenie przed brakiem opcji gracza.
+            if (!targetUser) {
+                return odpowiedz(
+                    interaction,
+                    "Nie udało się odczytać wybranego użytkownika."
+                );
+            }
+
+            if (targetUser.id === interaction.user.id) {
+                return odpowiedz(
+                    interaction,
+                    "Nie możesz użyć tej komendy na sobie."
+                );
+            }
+
+            if (targetUser.id === client.user.id) {
+                return odpowiedz(
+                    interaction,
+                    "Nie możesz użyć tej komendy na bocie."
+                );
+            }
+
+            const powod =
+                interaction.options.getString("powod")?.trim() ||
+                "Nie podano powodu";
+
+            const targetMember = await interaction.guild.members
+                .fetch(targetUser.id)
+                .catch(() => null);
+
+            if (!targetMember) {
+                return odpowiedz(
+                    interaction,
+                    "Nie znaleziono tego użytkownika na serwerze."
+                );
+            }
+
+            if (
+                interaction.guild.ownerId !== interaction.user.id &&
+                targetMember.roles.highest.position >=
+                    interaction.member.roles.highest.position
+            ) {
+                return odpowiedz(
+                    interaction,
+                    "Nie możesz moderować użytkownika z równą lub wyższą rolą."
+                );
+            }
+
+            if (
+                targetMember.roles.highest.position >=
+                interaction.guild.members.me.roles.highest.position
+            ) {
+                return odpowiedz(
+                    interaction,
+                    "Moja rola musi znajdować się wyżej niż rola tego użytkownika."
+                );
+            }
+
+            // WARN
+            if (commandName === "warn") {
+                await interaction.deferReply({
+                    flags: MessageFlags.Ephemeral,
+                });
+
+                const dm = embed(
+                    "Otrzymałeś ostrzeżenie",
+                    `Na serwerze **${BRAND}** otrzymałeś ostrzeżenie.\n\n` +
+                    `**Administrator:** ${interaction.user.tag}\n` +
+                    `**Powód:** ${powod}`,
+                    YELLOW
+                );
+
+                await targetUser.send({ embeds: [dm] }).catch(() => {});
+
+                return interaction.editReply({
+                    embeds: [
+                        embed(
+                            "Ostrzeżenie nadane",
+                            `**Użytkownik:** ${targetUser.tag}\n` +
+                            `**Powód:** ${powod}`,
+                            YELLOW
+                        ),
+                    ],
+                });
+            }
+
+            // KICK
+            if (commandName === "kick") {
+                await interaction.deferReply({
+                    flags: MessageFlags.Ephemeral,
+                });
+
+                const dm = embed(
+                    "Zostałeś wyrzucony",
+                    `Zostałeś wyrzucony z serwera **${BRAND}**.\n\n` +
+                    `**Administrator:** ${interaction.user.tag}\n` +
+                    `**Powód:** ${powod}`,
+                    RED
+                );
+
+                await targetUser.send({ embeds: [dm] }).catch(() => {});
+
+                try {
+                    await targetMember.kick(
+                        `Administrator: ${interaction.user.tag} | Powód: ${powod}`
+                    );
+                } catch (error) {
+                    console.error("[MODERACJA] Kick:", error);
+
+                    return interaction.editReply({
+                        embeds: [
+                            embed(
+                                "Nie udało się wyrzucić użytkownika",
+                                "Sprawdź uprawnienia bota i hierarchię ról.",
+                                RED
+                            ),
+                        ],
+                    });
+                }
+
+                return interaction.editReply({
+                    embeds: [
+                        embed(
+                            "Użytkownik wyrzucony",
+                            `**Użytkownik:** ${targetUser.tag}\n` +
+                            `**Powód:** ${powod}`
+                        ),
+                    ],
+                });
+            }
+
+            // BAN
+            if (commandName === "ban") {
+                await interaction.deferReply({
+                    flags: MessageFlags.Ephemeral,
+                });
+
+                const dm = embed(
+                    `Ban na ${BRAND}`,
+                    `Zostałeś zbanowany na serwerze **${BRAND}**.\n\n` +
+                    `**Administrator:** ${interaction.user.tag}\n` +
+                    `**Powód:** ${powod}\n\n` +
+                    "Jeśli uważasz, że to pomyłka, możesz złożyć odwołanie.",
+                    RED
+                );
+
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId("przycisk_odwolanie_ban")
+                        .setLabel("Odwołaj się od bana")
+                        .setStyle(ButtonStyle.Secondary)
+                );
+
+                await targetUser
+                    .send({ embeds: [dm], components: [row] })
+                    .catch(() => {});
+
+                try {
+                    await targetMember.ban({
+                        reason: `Administrator: ${interaction.user.tag} | Powód: ${powod}`,
+                    });
+                } catch (error) {
+                    console.error("[MODERACJA] Ban:", error);
+
+                    return interaction.editReply({
+                        embeds: [
+                            embed(
+                                "Nie udało się zbanować użytkownika",
+                                "Sprawdź uprawnienia bota i hierarchię ról.",
+                                RED
+                            ),
+                        ],
+                    });
+                }
+
+                return interaction.editReply({
+                    embeds: [
+                        embed(
+                            "Użytkownik zbanowany",
+                            `**Użytkownik:** ${targetUser.tag}\n` +
+                            `**Powód:** ${powod}`
+                        ),
+                    ],
+                });
+            }
+
+            // TEMPMUTE
+            if (commandName === "tempmute") {
+                const czasMinuty = interaction.options.getInteger("czas");
+
+                if (!czasMinuty || czasMinuty < 1 || czasMinuty > 40320) {
+                    return odpowiedz(
+                        interaction,
+                        "Podaj czas od 1 do 40320 minut (maksymalnie 28 dni)."
+                    );
+                }
+
+                await interaction.deferReply({
+                    flags: MessageFlags.Ephemeral,
+                });
+
+                try {
+                    await targetMember.timeout(
+                        czasMinuty * 60_000,
+                        `Administrator: ${interaction.user.tag} | Powód: ${powod}`
+                    );
+                } catch (error) {
+                    console.error("[MODERACJA] Timeout:", error);
+
+                    return interaction.editReply({
+                        embeds: [
+                            embed(
+                                "Nie udało się wyciszyć użytkownika",
+                                "Sprawdź uprawnienia bota i hierarchię ról.",
+                                RED
+                            ),
+                        ],
+                    });
+                }
+
+                const dm = embed(
+                    "Otrzymałeś wyciszenie",
+                    `Na serwerze **${BRAND}** zostałeś tymczasowo wyciszony.\n\n` +
+                    `**Czas:** ${czasMinuty} min\n` +
+                    `**Administrator:** ${interaction.user.tag}\n` +
+                    `**Powód:** ${powod}`,
+                    YELLOW
+                );
+
+                await targetUser.send({ embeds: [dm] }).catch(() => {});
+
+                return interaction.editReply({
+                    embeds: [
+                        embed(
+                            "Użytkownik wyciszony",
+                            `**Użytkownik:** ${targetUser.tag}\n` +
+                            `**Czas:** ${czasMinuty} min\n` +
+                            `**Powód:** ${powod}`
+                        ),
+                    ],
+                });
+            }
+        } catch (error) {
+            console.error("[MODERACJA] Błąd interakcji:", error);
+
+            if (interaction.isRepliable()) {
+                await odpowiedz(
+                    interaction,
+                    "Wystąpił błąd podczas obsługi tej akcji. Sprawdź logi bota."
+                );
             }
         }
     });
