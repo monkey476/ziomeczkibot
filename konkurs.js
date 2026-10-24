@@ -292,18 +292,26 @@ module.exports = (client) => {
         try {
             await setupDatabase();
 
-            // Rejestracja komend bez usuwania pozostałych komend bota
-            const existing = await client.application.commands.fetch();
+          // Rejestracja komend na serwerze — szybka aktualizacja
+const guild = client.guilds.cache.first();
 
-            for (const command of commands) {
-                const old = existing.find(c => c.name === command.name);
+if (!guild) {
+    throw new Error("Bot nie jest na żadnym serwerze Discord.");
+}
 
-                if (old) {
-                    await old.edit(command);
-                } else {
-                    await client.application.commands.create(command);
-                }
-            }
+const existing = await guild.commands.fetch();
+
+for (const command of commands) {
+    const old = existing.find(c => c.name === command.name);
+
+    if (old) {
+        await old.edit(command);
+    } else {
+        await guild.commands.create(command);
+    }
+}
+
+console.log(`[KONKURSY] Zarejestrowano komendy na serwerze: ${guild.name}`);
 
             initialized = true;
             console.log("[KONKURSY] Baza połączona, system uruchomiony.");
