@@ -25,7 +25,6 @@ module.exports = (client) => {
     });
 
     const GREEN = 0x65E65B;
-    const GOLD = 0xF5C451;
     const BRAND = "LOWHUB.PL";
     const JOIN_ID = "konkurs_join";
 
@@ -164,6 +163,7 @@ module.exports = (client) => {
         return result.rows[0].count;
     }
 
+    // Krótka karta konkursu — kolor zawsze zielony.
     function buildCard(giveaway, participantCount, ended = false) {
         const endsAt = Number(giveaway.ends_at);
         const prize = escapeText(giveaway.prize);
@@ -174,12 +174,11 @@ module.exports = (client) => {
             : [];
 
         const container = new ContainerBuilder()
-            .setAccentColor(ended ? GOLD : GREEN)
+            .setAccentColor(GREEN)
             .addTextDisplayComponents(
                 new TextDisplayBuilder().setContent(
-                    `# 🎉 ${BRAND}\n` +
-                    `### ✨ KONKURS COMMUNITY\n` +
-                    `Weź udział i zgarnij wyjątkową nagrodę!`
+                    `# 🟩 ${BRAND} • KONKURS\n` +
+                    `## 🎁 ${prize}`
                 )
             )
             .addSeparatorComponents(
@@ -187,11 +186,8 @@ module.exports = (client) => {
             )
             .addTextDisplayComponents(
                 new TextDisplayBuilder().setContent(
-                    `## 🎁 NAGRODA\n` +
-                    `> **${prize}**\n\n` +
-                    `**🏆 Liczba zwycięzców:** ${winnerCount}\n` +
-                    `**👥 Uczestnicy:** ${participantCount}\n` +
-                    `**👤 Organizator:** <@${hostId}>`
+                    `🏆 **Zwycięzcy:** ${winnerCount}  •  👥 **Uczestnicy:** ${participantCount}\n` +
+                    `👤 **Organizator:** <@${hostId}>`
                 )
             )
             .addSeparatorComponents(
@@ -201,26 +197,18 @@ module.exports = (client) => {
                 new TextDisplayBuilder().setContent(
                     ended
                         ? (
-                            `## 🏁 KONKURS ZAKOŃCZONY\n` +
-                            `Losowanie zostało zakończone.\n\n` +
-                            `### 🥇 Wylosowani zwycięzcy\n` +
+                            `### 🏁 Konkurs zakończony\n` +
                             (
                                 winners.length
-                                    ? winners.map(id => `• <@${id}>`).join("\n")
+                                    ? `**Wylosowani:** ${winners.map(id => `<@${id}>`).join(", ")}`
                                     : "Brak uczestników — nie udało się wyłonić zwycięzcy."
                             )
                         )
                         : (
-                            `## ⏳ KONKURS TRWA!\n` +
-                            `**Koniec konkursu:** <t:${Math.floor(endsAt / 1000)}:F>\n` +
-                            `**Pozostały czas:** ${timestamp(endsAt)}\n\n` +
-                            `Kliknij przycisk poniżej, aby dołączyć.\n` +
-                            `Powodzenia! 🍀`
+                            `**Koniec:** <t:${Math.floor(endsAt / 1000)}:F>\n` +
+                            `**Pozostały czas:** ${timestamp(endsAt)}`
                         )
                 )
-            )
-            .addSeparatorComponents(
-                new SeparatorBuilder().setDivider(true)
             )
             .addActionRowComponents(
                 new ActionRowBuilder().addComponents(
@@ -282,10 +270,7 @@ module.exports = (client) => {
             [ids[i], ids[j]] = [ids[j], ids[i]];
         }
 
-        const winners = ids.slice(
-            0,
-            Number(giveaway.winner_count)
-        );
+        const winners = ids.slice(0, Number(giveaway.winner_count));
 
         await pool.query(
             `UPDATE giveaways
@@ -305,12 +290,11 @@ module.exports = (client) => {
 
         if (channel && channel.isTextBased() && winners.length) {
             const announcement = new ContainerBuilder()
-                .setAccentColor(GOLD)
+                .setAccentColor(GREEN)
                 .addTextDisplayComponents(
                     new TextDisplayBuilder().setContent(
-                        `# 🏆 ${BRAND}\n` +
-                        `### KONKURS ZAKOŃCZONY!\n` +
-                        `Dziękujemy wszystkim za udział!`
+                        `# 🟩 ${BRAND} • WYNIKI\n` +
+                        `## 🏆 Konkurs zakończony`
                     )
                 )
                 .addSeparatorComponents(
@@ -318,11 +302,10 @@ module.exports = (client) => {
                 )
                 .addTextDisplayComponents(
                     new TextDisplayBuilder().setContent(
-                        `## 🎁 Nagroda\n` +
-                        `> **${escapeText(giveaway.prize)}**\n\n` +
-                        `### 🥇 Zwycięzcy\n` +
-                        winners.map((id, index) => `${index + 1}. <@${id}>`).join("\n") +
-                        `\n\n**👥 Liczba uczestników:** ${ids.length}`
+                        `**🎁 Nagroda:** ${escapeText(giveaway.prize)}\n` +
+                        `**👥 Uczestnicy:** ${ids.length}\n\n` +
+                        `**🥇 Zwycięzcy:**\n` +
+                        winners.map((id, index) => `${index + 1}. <@${id}>`).join("\n")
                     )
                 );
 
@@ -338,7 +321,8 @@ module.exports = (client) => {
             });
         } else if (channel && channel.isTextBased() && !winners.length) {
             await channel.send({
-                content: `🏁 Konkurs **${escapeText(giveaway.prize)}** został zakończony, ale nikt nie wziął udziału.`,
+                content:
+                    `🏁 Konkurs **${escapeText(giveaway.prize)}** został zakończony, ale nikt nie wziął udziału.`,
                 allowedMentions: { parse: [] },
             }).catch(() => {});
         }
@@ -396,10 +380,8 @@ module.exports = (client) => {
             );
 
             initialized = true;
-
             console.log("[KONKURSY] Baza połączona, system uruchomiony.");
 
-            // Obsługa konkursów, których termin minął podczas restartu.
             await checkExpiredGiveaways();
 
             if (!intervalStarted) {
@@ -425,11 +407,10 @@ module.exports = (client) => {
                         });
                     }
                 }
-
                 return;
             }
 
-            // Dołączanie do konkursu przyciskiem.
+            // Dołączanie do konkursu.
             if (
                 interaction.isButton() &&
                 interaction.customId.startsWith(`${JOIN_ID}:`)
@@ -472,8 +453,7 @@ module.exports = (client) => {
 
                 await interaction.reply({
                     content:
-                        `🎉 Dołączono do konkursu **${escapeText(giveaway.prize)}**!\n` +
-                        `Powodzenia! 🍀`,
+                        `✅ Dołączono do konkursu **${escapeText(giveaway.prize)}**! Powodzenia!`,
                     flags: MessageFlags.Ephemeral,
                 });
 
@@ -487,7 +467,10 @@ module.exports = (client) => {
 
             // Tworzenie konkursu.
             if (commandName === "konkurs") {
-                if (!interaction.inGuild() || !interaction.channel?.isTextBased()) {
+                if (
+                    !interaction.inGuild() ||
+                    !interaction.channel?.isTextBased()
+                ) {
                     return interaction.reply({
                         content: "Tej komendy można używać tylko na serwerze.",
                         flags: MessageFlags.Ephemeral,
@@ -509,8 +492,7 @@ module.exports = (client) => {
                 if (!duration) {
                     return interaction.reply({
                         content:
-                            "Nieprawidłowy czas. Użyj `30m`, `2h` albo `1d` " +
-                            "(maksymalnie 30 dni).",
+                            "Nieprawidłowy czas. Użyj `30m`, `2h` albo `1d` (maksymalnie 30 dni).",
                         flags: MessageFlags.Ephemeral,
                     });
                 }
@@ -577,7 +559,7 @@ module.exports = (client) => {
                 return;
             }
 
-            // Ręczne zakończenie konkursu lub ponowne losowanie.
+            // Ręczne zakończenie lub ponowne losowanie.
             if (
                 commandName === "konkurs-zakoncz" ||
                 commandName === "konkurs-losuj"
@@ -613,15 +595,15 @@ module.exports = (client) => {
                     });
                 }
 
-                if (commandName === "konkurs-zakoncz") {
-                    if (giveaway.status !== "active") {
-                        return interaction.reply({
-                            content:
-                                "Ten konkurs jest już zakończony. " +
-                                "Użyj `/konkurs-losuj`, aby wylosować ponownie.",
-                            flags: MessageFlags.Ephemeral,
-                        });
-                    }
+                if (
+                    commandName === "konkurs-zakoncz" &&
+                    giveaway.status !== "active"
+                ) {
+                    return interaction.reply({
+                        content:
+                            "Ten konkurs jest już zakończony. Użyj `/konkurs-losuj`, aby wylosować ponownie.",
+                        flags: MessageFlags.Ephemeral,
+                    });
                 }
 
                 await interaction.deferReply({
