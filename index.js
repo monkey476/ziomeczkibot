@@ -33,6 +33,7 @@ const moduly = [
     'powitalnia.js',
     'tickety.js',
     'weryfikacja.js'
+    'konkurs.js',
 ];
 
 console.log('--- Ładowanie modułów ---');
