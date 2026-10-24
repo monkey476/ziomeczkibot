@@ -32,7 +32,7 @@ const moduly = [
     'moderacja.js',
     'powitalnia.js',
     'tickety.js',
-    'weryfikacja.js'
+    'weryfikacja.js',
     'konkurs.js',
 ];
 
