@@ -130,7 +130,7 @@ module.exports = (client) => {
 
         if (
             !Number.isSafeInteger(duration) ||
-            duration > 30 * 86_400_000
+            duration > 356 * 86_400_000
         ) {
             return null;
         }
