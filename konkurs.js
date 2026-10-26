@@ -1,289 +1,105 @@
-const {
-    SlashCommandBuilder,
-    ContainerBuilder,
-    TextDisplayBuilder,
-    SeparatorBuilder,
-    ActionRowBuilder,
-    ButtonBuilder,
-    ButtonStyle,
-    MessageFlags,
-    PermissionFlagsBits,
-} = require("discord.js");
+```js
+    const container = new ContainerBuilder()
+        .setAccentColor(GREEN)
+        .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(`# ${BRAND} • KONKURS`)
+        )
+        .addSeparatorComponents(
+            new SeparatorBuilder().setDivider(true)
+        )
+        .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+                `**🎁 Nagroda:** ${prize}\n` +
+                `👥 **Uczestnicy:** ${participantCount}\n` +
+                `🏆 **Zwycięzcy:** ${winnerCount}`
+            )
+        )
+        .addSeparatorComponents(
+            new SeparatorBuilder().setDivider(true)
+        )
+        .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+                ended
+                    ? (
+                        `### 🏁 Konkurs zakończony\n` +
+                        (
+                            winners.length
+                                ? `**Wylosowani:** ${winners.map(id => `<@${id}>`).join(", ")}`
+                                : "Brak uczestników, nie udało się wyłonić zwycięzcy."
+                        )
+                    )
+                    : (
+                        `**🏁 Koniec:** <t:${Math.floor(endsAt / 1000)}:F>\n` +
+                        `**⌛ Pozostały czas:** ${timestamp(endsAt)}`
+                    )
+            )
+        )
+        .addActionRowComponents(
+            new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`${JOIN_ID}:${giveaway.message_id}`)
+                    .setLabel(ended ? "Konkurs zakończony" : "Weź udział")
+                    .setEmoji(ended ? "🏁" : "🎉")
+                    .setStyle(
+                        ended ? ButtonStyle.Secondary : ButtonStyle.Success
+                    )
+                    .setDisabled(ended)
+            )
+        );
 
-const { Pool } = require("pg");
+    return [container];
+}
 
-module.exports = (client) => {
-    if (!process.env.DATABASE_URL) {
-        console.error("[KONKURSY] Brak zmiennej DATABASE_URL w Renderze.");
-        return;
-    }
+async function refreshGiveaway(giveaway, ended = false) {
+    const channel = await client.channels.fetch(giveaway.channel_id).catch(() => null);
+    if (!channel || !channel.isTextBased() || !channel.messages) return;
 
-    const pool = new Pool({
-        connectionString: process.env.DATABASE_URL,
-        ssl: { rejectUnauthorized: false },
+    const message = await channel.messages.fetch(giveaway.message_id).catch(() => null);
+    if (!message) return;
+
+    const count = await getEntryCount(giveaway.message_id);
+
+    await message.edit({
+        components: buildCard(giveaway, count, ended),
+        flags: MessageFlags.IsComponentsV2,
+    }).catch(error => {
+        console.error("[KONKURSY] Nie udało się odświeżyć wiadomości:", error.message);
     });
+}
 
-    const GREEN = 0x65E65B;
-    const BRAND = "LOWHUB.PL";
-    const JOIN_ID = "konkurs_join";
+async function drawWinners(giveaway) {
+    const entries = await pool.query(
+        `SELECT user_id FROM giveaway_entries WHERE giveaway_id = $1`,
+        [giveaway.message_id]
+    );
 
-    // Role uprawnione do tworzenia konkursów.
-    const ROLE_ALL = "1495094192957817025";
-    const ROLE_GIVEAWAY = "1540162111706103848";
+    const ids = entries.rows.map(row => row.user_id);
 
-    const commands = [
-        new SlashCommandBuilder()
-            .setName("konkurs")
-            .setDescription("Utwórz nowy konkurs")
-            .addStringOption(o =>
-                o.setName("nagroda")
-                    .setDescription("Co można wygrać?")
-                    .setRequired(true)
-            )
-            .addStringOption(o =>
-                o.setName("data")
-                    .setDescription("Data zakończenia, np. 2026-11-05")
-                    .setRequired(true)
-            )
-            .addStringOption(o =>
-                o.setName("godzina")
-                    .setDescription("Godzina zakończenia, np. 18:30")
-                    .setRequired(true)
-            )
-            .addIntegerOption(o =>
-                o.setName("zwyciezcy")
-                    .setDescription("Liczba zwycięzców")
-                    .setMinValue(1)
-                    .setMaxValue(20)
-                    .setRequired(true)
-            ),
-
-        new SlashCommandBuilder()
-            .setName("konkurs-zakoncz")
-            .setDescription("Zakończ konkurs wcześniej")
-            .addStringOption(o =>
-                o.setName("wiadomosc_id")
-                    .setDescription("ID wiadomości konkursowej")
-                    .setRequired(true)
-            )
-            .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
-
-        new SlashCommandBuilder()
-            .setName("konkurs-losuj")
-            .setDescription("Wylosuj ponownie zwycięzców")
-            .addStringOption(o =>
-                o.setName("wiadomosc_id")
-                    .setDescription("ID wiadomości konkursowej")
-                    .setRequired(true)
-            )
-            .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
-
-        new SlashCommandBuilder()
-            .setName("konkurs-info")
-            .setDescription("Sprawdź informacje o konkursie")
-            .addStringOption(o =>
-                o.setName("wiadomosc_id")
-                    .setDescription("ID wiadomości konkursowej")
-                    .setRequired(true)
-            ),
-    ].map(command => command.toJSON());
-
-    let initialized = false;
-    let checking = false;
-    let intervalStarted = false;
-
-    async function setupDatabase() {
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS giveaways (
-                message_id TEXT PRIMARY KEY,
-                guild_id TEXT NOT NULL,
-                channel_id TEXT NOT NULL,
-                host_id TEXT NOT NULL,
-                prize TEXT NOT NULL,
-                winner_count INTEGER NOT NULL,
-                ends_at BIGINT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'active',
-                winners TEXT[] NOT NULL DEFAULT '{}',
-                created_at BIGINT NOT NULL
-            )
-        `);
-
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS giveaway_entries (
-                giveaway_id TEXT NOT NULL
-                    REFERENCES giveaways(message_id) ON DELETE CASCADE,
-                user_id TEXT NOT NULL,
-                joined_at BIGINT NOT NULL,
-                PRIMARY KEY (giveaway_id, user_id)
-            )
-        `);
+    for (let i = ids.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [ids[i], ids[j]] = [ids[j], ids[i]];
     }
 
-    function hasGiveawayPermission(interaction) {
-        const roles = interaction.member?.roles;
+    const winners = ids.slice(0, Number(giveaway.winner_count));
 
-        if (!roles) return false;
+    await pool.query(
+        `UPDATE giveaways SET status = 'ended', winners = $1 WHERE message_id = $2`,
+        [winners, giveaway.message_id]
+    );
 
-        if (roles.cache) {
-            return (
-                roles.cache.has(ROLE_ALL) ||
-                roles.cache.has(ROLE_GIVEAWAY)
-            );
-        }
+    giveaway.status = "ended";
+    giveaway.winners = winners;
 
-        if (Array.isArray(roles)) {
-            return (
-                roles.includes(ROLE_ALL) ||
-                roles.includes(ROLE_GIVEAWAY)
-            );
-        }
+    await refreshGiveaway(giveaway, true);
 
-        return false;
-    }
+    const channel = await client.channels.fetch(giveaway.channel_id).catch(() => null);
 
-    // Zamienia datę i godzinę polską na timestamp.
-    function parseWarsawDateTime(dateValue, timeValue) {
-        const dateMatch = dateValue.match(
-            /^(\d{4})-(\d{2})-(\d{2})$/
-        );
-
-        const timeMatch = timeValue.match(
-            /^([01]\d|2[0-3]):([0-5]\d)$/
-        );
-
-        if (!dateMatch || !timeMatch) return null;
-
-        const year = Number(dateMatch[1]);
-        const month = Number(dateMatch[2]);
-        const day = Number(dateMatch[3]);
-        const hour = Number(timeMatch[1]);
-        const minute = Number(timeMatch[2]);
-
-        const desiredUTC = Date.UTC(
-            year,
-            month - 1,
-            day,
-            hour,
-            minute
-        );
-
-        const checkDate = new Date(desiredUTC);
-
-        if (
-            checkDate.getUTCFullYear() !== year ||
-            checkDate.getUTCMonth() !== month - 1 ||
-            checkDate.getUTCDate() !== day
-        ) {
-            return null;
-        }
-
-        let timestamp = desiredUTC;
-
-        const formatter = new Intl.DateTimeFormat("en-GB", {
-            timeZone: "Europe/Warsaw",
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-            hourCycle: "h23",
-        });
-
-        for (let i = 0; i < 4; i++) {
-            const values = {};
-
-            for (
-                const part of formatter.formatToParts(
-                    new Date(timestamp)
-                )
-            ) {
-                if (part.type !== "literal") {
-                    values[part.type] = Number(part.value);
-                }
-            }
-
-            const actualAsUTC = Date.UTC(
-                values.year,
-                values.month - 1,
-                values.day,
-                values.hour,
-                values.minute
-            );
-
-            const difference = desiredUTC - actualAsUTC;
-
-            if (difference === 0) break;
-
-            timestamp += difference;
-        }
-
-        const finalValues = {};
-
-        for (
-            const part of formatter.formatToParts(
-                new Date(timestamp)
-            )
-        ) {
-            if (part.type !== "literal") {
-                finalValues[part.type] = Number(part.value);
-            }
-        }
-
-        // Sprawdza również nieistniejące godziny przy zmianie czasu.
-        if (
-            finalValues.year !== year ||
-            finalValues.month !== month ||
-            finalValues.day !== day ||
-            finalValues.hour !== hour ||
-            finalValues.minute !== minute ||
-            timestamp <= Date.now()
-        ) {
-            return null;
-        }
-
-        return timestamp;
-    }
-
-    function timestamp(ms) {
-        return `<t:${Math.floor(Number(ms) / 1000)}:R>`;
-    }
-
-    function escapeText(value) {
-        return String(value ?? "")
-            .replace(/\\/g, "\\\\")
-            .replace(/\*/g, "\\*")
-            .replace(/_/g, "\\_")
-            .replace(/`/g, "\\`")
-            .replace(/~/g, "\\~")
-            .replace(/\|/g, "\\|");
-    }
-
-    async function getEntryCount(id) {
-        const result = await pool.query(
-            `SELECT COUNT(*)::int AS count
-             FROM giveaway_entries
-             WHERE giveaway_id = $1`,
-            [id]
-        );
-
-        return result.rows[0].count;
-    }
-
-    // Karta konkursu — wygląd LOWHUB.PL.
-    function buildCard(giveaway, participantCount, ended = false) {
-        const endsAt = Number(giveaway.ends_at);
-        const prize = escapeText(giveaway.prize);
-        const winnerCount = Number(giveaway.winner_count);
-
-        const winners = Array.isArray(giveaway.winners)
-            ? giveaway.winners
-            : [];
-
-        const container = new ContainerBuilder()
+    if (channel && channel.isTextBased() && winners.length) {
+        const announcement = new ContainerBuilder()
             .setAccentColor(GREEN)
             .addTextDisplayComponents(
                 new TextDisplayBuilder().setContent(
-                    `# ${BRAND} • KONKURS`
+                    `# ${BRAND} • WYNIKI\n## 🏆 Konkurs zakończony`
                 )
             )
             .addSeparatorComponents(
@@ -291,450 +107,245 @@ module.exports = (client) => {
             )
             .addTextDisplayComponents(
                 new TextDisplayBuilder().setContent(
-                    `**🎁 Nagroda:** ${prize}\n` +
-                    `👥 **Uczestnicy:** ${participantCount}\n` +
-                    `🏆 **Zwycięzcy:** ${winnerCount}`
-                )
-            )
-            .addSeparatorComponents(
-                new SeparatorBuilder().setDivider(true)
-            )
-            .addTextDisplayComponents(
-                new TextDisplayBuilder().setContent(
-                    ended
-                        ? (
-                            `### 🏁 Konkurs zakończony\n` +
-                            (
-                                winners.length
-                                    ? `**Wylosowani:** ${winners.map(id => `<@${id}>`).join(", ")}`
-                                    : "Brak uczestników, nie udało się wyłonić zwycięzcy."
-                            )
-                        )
-                        : (
-                            `**🏁 Koniec:** <t:${Math.floor(endsAt / 1000)}:F>\n` +
-                            `**⌛ Pozostały czas:** ${timestamp(endsAt)}`
-                        )
-                )
-            )
-            .addActionRowComponents(
-                new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(
-                            `${JOIN_ID}:${giveaway.message_id}`
-                        )
-                        .setLabel(
-                            ended ? "Konkurs zakończony" : "Weź udział"
-                        )
-                        .setEmoji(ended ? "🏁" : "🎉")
-                        .setStyle(
-                            ended
-                                ? ButtonStyle.Secondary
-                                : ButtonStyle.Success
-                        )
-                        .setDisabled(ended)
+                    `**🎁 Nagroda:** ${escapeText(giveaway.prize)}\n` +
+                    `**👥 Uczestnicy:** ${ids.length}\n\n` +
+                    `**🥇 Zwycięzcy:**\n` +
+                    winners.map((id, index) => `${index + 1}. <@${id}>`).join("\n")
                 )
             );
 
-        return [container];
-    }
-
-    async function refreshGiveaway(giveaway, ended = false) {
-        const channel = await client.channels
-            .fetch(giveaway.channel_id)
-            .catch(() => null);
-
-        if (!channel || !channel.isTextBased() || !channel.messages) {
-            return;
-        }
-
-        const message = await channel.messages
-            .fetch(giveaway.message_id)
-            .catch(() => null);
-
-        if (!message) return;
-
-        const count = await getEntryCount(giveaway.message_id);
-
-        await message.edit({
-            components: buildCard(giveaway, count, ended),
+        await channel.send({
+            components: [announcement],
             flags: MessageFlags.IsComponentsV2,
+            allowedMentions: { users: winners },
         }).catch(error => {
-            console.error(
-                "[KONKURSY] Nie udało się odświeżyć wiadomości:",
-                error.message
-            );
+            console.error("[KONKURSY] Nie udało się wysłać ogłoszenia:", error.message);
         });
+    } else if (channel && channel.isTextBased() && !winners.length) {
+        await channel.send({
+            content: `🏁 Konkurs **${escapeText(giveaway.prize)}** został zakończony, ale nikt nie wziął udziału :(`,
+            allowedMentions: { parse: [] },
+        }).catch(() => {});
     }
 
-    async function drawWinners(giveaway) {
-        const entries = await pool.query(
-            `SELECT user_id
-             FROM giveaway_entries
-             WHERE giveaway_id = $1`,
-            [giveaway.message_id]
+    return winners;
+}
+
+async function checkExpiredGiveaways() {
+    if (checking) return;
+    checking = true;
+
+    try {
+        const result = await pool.query(
+            `SELECT * FROM giveaways WHERE status = 'active' AND ends_at <= $1`,
+            [Date.now()]
         );
 
-        const ids = entries.rows.map(row => row.user_id);
-
-        // Losowanie bez powtarzania tej samej osoby.
-        for (let i = ids.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [ids[i], ids[j]] = [ids[j], ids[i]];
+        for (const giveaway of result.rows) {
+            await drawWinners(giveaway);
         }
-
-        const winners = ids.slice(
-            0,
-            Number(giveaway.winner_count)
-        );
-
-        await pool.query(
-            `UPDATE giveaways
-             SET status = 'ended', winners = $1
-             WHERE message_id = $2`,
-            [winners, giveaway.message_id]
-        );
-
-        giveaway.status = "ended";
-        giveaway.winners = winners;
-
-        await refreshGiveaway(giveaway, true);
-
-        const channel = await client.channels
-            .fetch(giveaway.channel_id)
-            .catch(() => null);
-
-        if (channel && channel.isTextBased() && winners.length) {
-            const announcement = new ContainerBuilder()
-                .setAccentColor(GREEN)
-                .addTextDisplayComponents(
-                    new TextDisplayBuilder().setContent(
-                        `# ${BRAND} • WYNIKI\n` +
-                        `## 🏆 Konkurs zakończony`
-                    )
-                )
-                .addSeparatorComponents(
-                    new SeparatorBuilder().setDivider(true)
-                )
-                .addTextDisplayComponents(
-                    new TextDisplayBuilder().setContent(
-                        `**🎁 Nagroda:** ${escapeText(giveaway.prize)}\n` +
-                        `**👥 Uczestnicy:** ${ids.length}\n\n` +
-                        `**🥇 Zwycięzcy:**\n` +
-                        winners.map(
-                            (id, index) => `${index + 1}. <@${id}>`
-                        ).join("\n")
-                    )
-                );
-
-            await channel.send({
-                components: [announcement],
-                flags: MessageFlags.IsComponentsV2,
-                allowedMentions: { users: winners },
-            }).catch(error => {
-                console.error(
-                    "[KONKURSY] Nie udało się wysłać ogłoszenia:",
-                    error.message
-                );
-            });
-        } else if (channel && channel.isTextBased() && !winners.length) {
-            await channel.send({
-                content:
-                    `🏁 Konkurs **${escapeText(giveaway.prize)}** został zakończony, ale nikt nie wziął udziału :(`,
-                allowedMentions: { parse: [] },
-            }).catch(() => {});
-        }
-
-        return winners;
+    } catch (error) {
+        console.error("[KONKURSY] Błąd sprawdzania czasu:", error);
+    } finally {
+        checking = false;
     }
+}
 
-    async function checkExpiredGiveaways() {
-        if (checking) return;
+client.once("ready", async () => {
+    try {
+        await setupDatabase();
 
-        checking = true;
+        const guild = client.guilds.cache.first();
+        if (!guild) throw new Error("Bot nie jest na żadnym serwerze Discord.");
 
-        try {
-            const result = await pool.query(
-                `SELECT *
-                 FROM giveaways
-                 WHERE status = 'active' AND ends_at <= $1`,
-                [Date.now()]
-            );
+        const existing = await guild.commands.fetch();
 
-            for (const giveaway of result.rows) {
-                await drawWinners(giveaway);
-            }
-        } catch (error) {
-            console.error(
-                "[KONKURSY] Błąd sprawdzania czasu:",
-                error
-            );
-        } finally {
-            checking = false;
+        for (const command of commands) {
+            const old = existing.find(c => c.name === command.name);
+            if (old) await old.edit(command);
+            else await guild.commands.create(command);
         }
+
+        console.log(`[KONKURSY] Zarejestrowano komendy na serwerze: ${guild.name}`);
+
+        initialized = true;
+        console.log("[KONKURSY] Baza połączona, system uruchomiony.");
+
+        await checkExpiredGiveaways();
+
+        if (!intervalStarted) {
+            intervalStarted = true;
+            setInterval(checkExpiredGiveaways, 15_000);
+        }
+    } catch (error) {
+        console.error("[KONKURSY] Błąd uruchamiania:", error);
     }
+});
 
-    client.once("ready", async () => {
-        try {
-            await setupDatabase();
-
-            // Rejestracja komend na pierwszym serwerze bota.
-            const guild = client.guilds.cache.first();
-
-            if (!guild) {
-                throw new Error(
-                    "Bot nie jest na żadnym serwerze Discord."
-                );
-            }
-
-            const existing = await guild.commands.fetch();
-
-            for (const command of commands) {
-                const old = existing.find(
-                    c => c.name === command.name
-                );
-
-                if (old) {
-                    await old.edit(command);
-                } else {
-                    await guild.commands.create(command);
-                }
-            }
-
-            console.log(
-                `[KONKURSY] Zarejestrowano komendy na serwerze: ${guild.name}`
-            );
-
-            initialized = true;
-
-            console.log(
-                "[KONKURSY] Baza połączona, system uruchomiony."
-            );
-
-            await checkExpiredGiveaways();
-
-            if (!intervalStarted) {
-                intervalStarted = true;
-                setInterval(checkExpiredGiveaways, 15_000);
-            }
-        } catch (error) {
-            console.error(
-                "[KONKURSY] Błąd uruchamiania:",
-                error
-            );
-        }
-    });
-
-    client.on("interactionCreate", async interaction => {
-        try {
-            if (!initialized) {
-                if (
-                    interaction.isChatInputCommand() ||
-                    interaction.isButton()
-                ) {
-                    if (
-                        !interaction.replied &&
-                        !interaction.deferred
-                    ) {
-                        await interaction.reply({
-                            content:
-                                "System konkursów jeszcze się uruchamia. Spróbuj za chwilę.",
-                            flags: MessageFlags.Ephemeral,
-                        });
-                    }
-                }
-
-                return;
-            }
-
-            // Dołączanie i wychodzenie z konkursu.
+client.on("interactionCreate", async interaction => {
+    try {
+        if (!initialized) {
             if (
-                interaction.isButton() &&
-                interaction.customId.startsWith(`${JOIN_ID}:`)
+                interaction.isChatInputCommand() ||
+                interaction.isButton()
             ) {
-                const id = interaction.customId.slice(
-                    JOIN_ID.length + 1
-                );
-
-                const result = await pool.query(
-                    "SELECT * FROM giveaways WHERE message_id = $1",
-                    [id]
-                );
-
-                const giveaway = result.rows[0];
-
-                if (
-                    !giveaway ||
-                    giveaway.status !== "active" ||
-                    Number(giveaway.ends_at) <= Date.now()
-                ) {
-                    return interaction.reply({
-                        content: "Ten konkurs jest już zakończony.",
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({
+                        content: "System konkursów jeszcze się uruchamia. Spróbuj za chwilę.",
                         flags: MessageFlags.Ephemeral,
                     });
                 }
+            }
+            return;
+        }
 
-                // Jeśli użytkownik już uczestniczy — usuń go z konkursu.
-                const existingEntry = await pool.query(
-                    `SELECT user_id
-                     FROM giveaway_entries
+        // Przycisk konkursu — dołączanie lub wychodzenie.
+        if (
+            interaction.isButton() &&
+            interaction.customId.startsWith(`${JOIN_ID}:`)
+        ) {
+            const id = interaction.customId.slice(JOIN_ID.length + 1);
+            const result = await pool.query(
+                "SELECT * FROM giveaways WHERE message_id = $1",
+                [id]
+            );
+            const giveaway = result.rows[0];
+
+            if (
+                !giveaway ||
+                giveaway.status !== "active" ||
+                Number(giveaway.ends_at) <= Date.now()
+            ) {
+                return interaction.reply({
+                    content: "Ten konkurs jest już zakończony.",
+                    flags: MessageFlags.Ephemeral,
+                });
+            }
+
+            const existingEntry = await pool.query(
+                `SELECT user_id FROM giveaway_entries
+                 WHERE giveaway_id = $1 AND user_id = $2`,
+                [id, interaction.user.id]
+            );
+
+            if (existingEntry.rowCount > 0) {
+                await pool.query(
+                    `DELETE FROM giveaway_entries
                      WHERE giveaway_id = $1 AND user_id = $2`,
                     [id, interaction.user.id]
                 );
 
-                if (existingEntry.rowCount > 0) {
-                    await pool.query(
-                        `DELETE FROM giveaway_entries
-                         WHERE giveaway_id = $1 AND user_id = $2`,
-                        [id, interaction.user.id]
-                    );
-
-                    await interaction.reply({
-                        content:
-                            `↩️ Wyszedłeś z konkursu **${escapeText(giveaway.prize)}**. Możesz dołączyć ponownie, klikając przycisk.`,
-                        flags: MessageFlags.Ephemeral,
-                    });
-
-                    await refreshGiveaway(giveaway);
-
-                    return;
-                }
-
-                // Jeśli użytkownik jeszcze nie uczestniczy — dodaj go.
-                await pool.query(
-                    `INSERT INTO giveaway_entries
-                        (giveaway_id, user_id, joined_at)
-                     VALUES ($1, $2, $3)
-                     ON CONFLICT (giveaway_id, user_id) DO NOTHING`,
-                    [id, interaction.user.id, Date.now()]
-                );
-
                 await interaction.reply({
-                    content:
-                        `✅ Dołączono do konkursu **${escapeText(giveaway.prize)}**! Powodzenia!`,
+                    content: `↩️ Wyszedłeś z konkursu **${escapeText(giveaway.prize)}**. Możesz dołączyć ponownie, klikając przycisk.`,
                     flags: MessageFlags.Ephemeral,
                 });
 
                 await refreshGiveaway(giveaway);
-
                 return;
             }
 
-            if (!interaction.isChatInputCommand()) return;
+            await pool.query(
+                `INSERT INTO giveaway_entries (giveaway_id, user_id, joined_at)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (giveaway_id, user_id) DO NOTHING`,
+                [id, interaction.user.id, Date.now()]
+            );
 
-            const { commandName } = interaction;
+            await interaction.reply({
+                content: `✅ Dołączono do konkursu **${escapeText(giveaway.prize)}**! Powodzenia!`,
+                flags: MessageFlags.Ephemeral,
+            });
 
-            // Tworzenie konkursu — wymagane perms.all lub perms.giveaway.
-            if (commandName === "konkurs") {
-                if (
-                    !interaction.inGuild() ||
-                    !interaction.channel?.isTextBased()
-                ) {
-                    return interaction.reply({
-                        content:
-                            "Tej komendy można używać tylko na serwerze.",
-                        flags: MessageFlags.Ephemeral,
-                    });
-                }
+            await refreshGiveaway(giveaway);
+            return;
+        }
 
-                if (!hasGiveawayPermission(interaction)) {
-                    return interaction.reply({
-                        content:
-                            "❌ Nie masz uprawnień do tworzenia konkursów. Wymagana rola: <@&1495094192957817025> lub <@&1540162111706103848>.",
-                        flags: MessageFlags.Ephemeral,
-                        allowedMentions: { parse: [] },
-                    });
-                }
+        if (!interaction.isChatInputCommand()) return;
 
-                const prize = interaction.options
-                    .getString("nagroda", true)
-                    .trim();
+        const { commandName } = interaction;
 
-                const dateInput = interaction.options
-                    .getString("data", true)
-                    .trim();
-
-                const timeInput = interaction.options
-                    .getString("godzina", true)
-                    .trim();
-
-                const winnerCount = interaction.options
-                    .getInteger("zwyciezcy", true);
-
-                const endsAt = parseWarsawDateTime(
-                    dateInput,
-                    timeInput
-                );
-
-                if (!endsAt) {
-                    return interaction.reply({
-                        content:
-                            "❌ Nieprawidłowa data lub godzina albo termin już minął. " +
-                            "Użyj daty `RRRR-MM-DD` i godziny `GG:MM`, np. `2026-11-05` oraz `18:30`. Czas musi być przyszły.",
-                        flags: MessageFlags.Ephemeral,
-                    });
-                }
-
-                if (!prize || prize.length > 200) {
-                    return interaction.reply({
-                        content:
-                            "Nagroda musi mieć od 1 do 200 znaków.",
-                        flags: MessageFlags.Ephemeral,
-                    });
-                }
-
-                await interaction.deferReply({
+        // Tworzenie konkursu.
+        if (commandName === "konkurs") {
+            if (!interaction.inGuild() || !interaction.channel?.isTextBased()) {
+                return interaction.reply({
+                    content: "Tej komendy można używać tylko na serwerze.",
                     flags: MessageFlags.Ephemeral,
                 });
-
-                const draft = {
-                    message_id: "pending",
-                    guild_id: interaction.guildId,
-                    channel_id: interaction.channelId,
-                    host_id: interaction.user.id,
-                    prize,
-                    winner_count: winnerCount,
-                    ends_at: endsAt,
-                    status: "active",
-                    winners: [],
-                };
-
-                const message = await interaction.channel.send({
-                    components: buildCard(draft, 0, false),
-                    flags: MessageFlags.IsComponentsV2,
-                });
-
-                draft.message_id = message.id;
-
-                await pool.query(
-                    `INSERT INTO giveaways
-                        (message_id, guild_id, channel_id, host_id, prize,
-                         winner_count, ends_at, status, created_at)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8)`,
-                    [
-                        message.id,
-                        interaction.guildId,
-                        interaction.channelId,
-                        interaction.user.id,
-                        prize,
-                        winnerCount,
-                        endsAt,
-                        Date.now(),
-                    ]
-                );
-
-                await refreshGiveaway(draft);
-
-                await interaction.editReply({
-                    content:
-                        `✅ Konkurs został utworzony!\n` +
-                        `**Nagroda:** ${escapeText(prize)}\n` +
-                        `**Koniec:** <t:${Math.floor(endsAt / 1000)}:F>\n` +
-                        `**ID wiadomości:** \`${message.id}\``,
-                });
-
-                return;
             }
 
+            if (!hasGiveawayPermission(interaction)) {
+                return interaction.reply({
+                    content: "❌ Nie masz uprawnień do tworzenia konkursów. Wymagana rola: <@&1495094192957817025> lub <@&1540162111706103848>.",
+                    flags: MessageFlags.Ephemeral,
+                    allowedMentions: { parse: [] },
+                });
+            }
+
+            const prize = interaction.options.getString("nagroda", true).trim();
+            const dateInput = interaction.options.getString("data", true).trim();
+            const timeInput = interaction.options.getString("godzina", true).trim();
+            const winnerCount = interaction.options.getInteger("zwyciezcy", true);
+            const endsAt = parseWarsawDateTime(dateInput, timeInput);
+
+            if (!endsAt || endsAt <= Date.now()) {
+                return interaction.reply({
+                    content: "❌ Podaj prawidłową datę i godzinę w przyszłości. Data: `RRRR-MM-DD`, godzina: `GG:MM` (czas polski).",
+                    flags: MessageFlags.Ephemeral,
+                });
+            }
+
+            if (!prize || prize.length > 200) {
+                return interaction.reply({
+                    content: "Nagroda musi mieć od 1 do 200 znaków.",
+                    flags: MessageFlags.Ephemeral,
+                });
+            }
+
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+            const draft = {
+                message_id: "pending",
+                guild_id: interaction.guildId,
+                channel_id: interaction.channelId,
+                host_id: interaction.user.id,
+                prize,
+                winner_count: winnerCount,
+                ends_at: endsAt,
+                status: "active",
+                winners: [],
+            };
+
+            const message = await interaction.channel.send({
+                components: buildCard(draft, 0, false),
+                flags: MessageFlags.IsComponentsV2,
+            });
+
+            draft.message_id = message.id;
+
+            await pool.query(
+                `INSERT INTO giveaways
+                    (message_id, guild_id, channel_id, host_id, prize,
+                     winner_count, ends_at, status, created_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8)`,
+                [
+                    message.id,
+                    interaction.guildId,
+                    interaction.channelId,
+                    interaction.user.id,
+                    prize,
+                    winnerCount,
+                    endsAt,
+                    Date.now(),
+                ]
+            );
+
+            await refreshGiveaway(draft);
+
+            await interaction.editReply({
+                content: `✅ Konkurs został utworzony!\n**Nagroda:** ${escapeText(prize)}\n**Koniec:** ${timestamp(endsAt)}\n**ID wiadomości:** \`${message.id}\``,
+            });
+            return;
+        }
             // Ręczne zakończenie lub ponowne losowanie.
             if (
                 commandName === "konkurs-zakoncz" ||
@@ -746,8 +357,7 @@ module.exports = (client) => {
                     )
                 ) {
                     return interaction.reply({
-                        content:
-                            "Potrzebujesz uprawnienia **Zarządzanie serwerem**.",
+                        content: "Potrzebujesz uprawnienia **Zarządzanie serwerem**.",
                         flags: MessageFlags.Ephemeral,
                     });
                 }
@@ -767,8 +377,7 @@ module.exports = (client) => {
 
                 if (!giveaway) {
                     return interaction.reply({
-                        content:
-                            "Nie znaleziono konkursu o takim ID na tym serwerze.",
+                        content: "Nie znaleziono konkursu o takim ID na tym serwerze.",
                         flags: MessageFlags.Ephemeral,
                     });
                 }
@@ -821,8 +430,7 @@ module.exports = (client) => {
 
                 if (!giveaway) {
                     return interaction.reply({
-                        content:
-                            "Nie znaleziono konkursu o takim ID na tym serwerze.",
+                        content: "Nie znaleziono konkursu o takim ID na tym serwerze.",
                         flags: MessageFlags.Ephemeral,
                     });
                 }
@@ -837,10 +445,242 @@ module.exports = (client) => {
                         `**👥 Uczestnicy:** ${count}\n` +
                         `**🏆 Liczba zwycięzców:** ${giveaway.winner_count}\n` +
                         `**👤 Organizator:** <@${giveaway.host_id}>\n` +
-                        `**🕒 Koniec:** <t:${Math.floor(Number(giveaway.ends_at) / 1000)}:F>\n` +
+                        `**🕒 Koniec:** ${timestamp(Number(giveaway.ends_at))}\n` +
                         `**🆔 ID wiadomości:** \`${giveaway.message_id}\``,
                     flags: MessageFlags.Ephemeral,
                 });
+            }
+
+            // Komendy moderacyjne.
+            // Wymagana jest rola perms.all.
+            // Bot nie kickuje ani nie banuje graczy.
+            const moderationCommands = [
+                "czlonkowie",
+                "sprawdz-gracza",
+                "multikonto",
+                "historia-moderacji",
+                "usun-z-konkursu",
+            ];
+
+            if (moderationCommands.includes(commandName)) {
+                if (!interaction.inGuild()) {
+                    return interaction.reply({
+                        content: "Tej komendy można używać tylko na serwerze.",
+                        flags: MessageFlags.Ephemeral,
+                    });
+                }
+
+                if (!hasRole(interaction, ROLE_MOD)) {
+                    return interaction.reply({
+                        content:
+                            "❌ Nie masz uprawnień. Wymagana jest rola <@&1495094192957817025>.",
+                        flags: MessageFlags.Ephemeral,
+                        allowedMentions: { parse: [] },
+                    });
+                }
+
+                // Lista członków serwera.
+                if (commandName === "czlonkowie") {
+                    await interaction.deferReply({
+                        flags: MessageFlags.Ephemeral,
+                    });
+
+                    const search = (
+                        interaction.options.getString("szukaj") || ""
+                    ).toLowerCase().trim();
+
+                    const members = await interaction.guild.members.fetch();
+
+                    let found = [...members.values()];
+
+                    if (search) {
+                        found = found.filter(m =>
+                            m.id.includes(search) ||
+                            m.user.username.toLowerCase().includes(search) ||
+                            (m.nickname || "").toLowerCase().includes(search) ||
+                            m.user.tag.toLowerCase().includes(search)
+                        );
+                    }
+
+                    found = found.slice(0, 10);
+
+                    return interaction.editReply({
+                        content: found.length
+                            ? `**Wyniki (${found.length}, maks. 10):**\n` +
+                              found.map(m =>
+                                  `• ${m} — \`${m.user.tag}\` | ID: \`${m.id}\` | dołączył: ${
+                                      m.joinedTimestamp
+                                          ? safeDate(m.joinedTimestamp)
+                                          : "brak danych"
+                                  }`
+                              ).join("\n")
+                            : "Nie znaleziono członków.",
+                        allowedMentions: { parse: [] },
+                    });
+                }
+
+                // Sprawdzanie informacji o graczu.
+                if (commandName === "sprawdz-gracza") {
+                    const user = interaction.options.getUser("gracz", true);
+
+                    const member = await interaction.guild.members
+                        .fetch(user.id)
+                        .catch(() => null);
+
+                    const rows = await getModerationRows(
+                        interaction.guildId,
+                        user.id,
+                        5
+                    );
+
+                    const multiCount = (
+                        await pool.query(
+                            `SELECT COUNT(*)::int AS count
+                             FROM moderation_history
+                             WHERE guild_id = $1
+                               AND target_id = $2
+                               AND action = 'MULTIKONTO'`,
+                            [interaction.guildId, user.id]
+                        )
+                    ).rows[0].count;
+
+                    return interaction.reply({
+                        content:
+                            `## Sprawdzenie gracza\n` +
+                            `**Użytkownik:** ${user} (${escapeText(user.tag)})\n` +
+                            `**ID:** \`${user.id}\`\n` +
+                            `**Na serwerze:** ${member ? "tak" : "nie"}\n` +
+                            `**Konto utworzone:** ${safeDate(user.createdTimestamp)}\n` +
+                            `**Dołączył:** ${
+                                member?.joinedTimestamp
+                                    ? safeDate(member.joinedTimestamp)
+                                    : "brak danych"
+                            }\n` +
+                            `**Podejrzenia multikonta:** ${multiCount}\n` +
+                            `**Ostatnia historia:**\n${formatModerationRows(rows)}`,
+                        flags: MessageFlags.Ephemeral,
+                        allowedMentions: { parse: [] },
+                    });
+                }
+
+                // Zapis podejrzenia multikonta.
+                // To tylko wpis do historii — bez automatycznej kary.
+                if (commandName === "multikonto") {
+                    const user = interaction.options.getUser("gracz", true);
+                    const reason = interaction.options
+                        .getString("powod", true)
+                        .trim();
+
+                    await logModeration(
+                        interaction,
+                        user.id,
+                        "MULTIKONTO",
+                        reason
+                    );
+
+                    return interaction.reply({
+                        content:
+                            `⚠️ Zapisano podejrzenie multikonta dla ${user}. ` +
+                            `To wyłącznie wpis do historii — bot nie nakłada żadnej kary.\n` +
+                            `**Powód:** ${escapeText(reason)}`,
+                        flags: MessageFlags.Ephemeral,
+                        allowedMentions: { users: [user.id] },
+                    });
+                }
+
+                // Historia moderacji wybranego gracza.
+                if (commandName === "historia-moderacji") {
+                    const user = interaction.options.getUser("gracz", true);
+
+                    const rows = await getModerationRows(
+                        interaction.guildId,
+                        user.id,
+                        12
+                    );
+
+                    return interaction.reply({
+                        content:
+                            `## Historia moderacji: ${escapeText(user.tag)}\n` +
+                            formatModerationRows(rows),
+                        flags: MessageFlags.Ephemeral,
+                        allowedMentions: { parse: [] },
+                    });
+                }
+
+                // Usunięcie gracza wyłącznie z konkretnego konkursu.
+                if (commandName === "usun-z-konkursu") {
+                    const messageId = interaction.options
+                        .getString("wiadomosc_id", true)
+                        .trim();
+
+                    const user = interaction.options.getUser("gracz", true);
+
+                    const reason = (
+                        interaction.options.getString("powod") ||
+                        "Nie podano powodu."
+                    ).trim();
+
+                    const result = await pool.query(
+                        `SELECT *
+                         FROM giveaways
+                         WHERE message_id = $1
+                           AND guild_id = $2`,
+                        [messageId, interaction.guildId]
+                    );
+
+                    const giveaway = result.rows[0];
+
+                    if (!giveaway) {
+                        return interaction.reply({
+                            content:
+                                "Nie znaleziono konkursu o takim ID na tym serwerze.",
+                            flags: MessageFlags.Ephemeral,
+                        });
+                    }
+
+                    if (giveaway.status !== "active") {
+                        return interaction.reply({
+                            content:
+                                "Nie można usuwać uczestników z zakończonego konkursu.",
+                            flags: MessageFlags.Ephemeral,
+                        });
+                    }
+
+                    const deleted = await pool.query(
+                        `DELETE FROM giveaway_entries
+                         WHERE giveaway_id = $1
+                           AND user_id = $2
+                         RETURNING user_id`,
+                        [messageId, user.id]
+                    );
+
+                    if (!deleted.rowCount) {
+                        return interaction.reply({
+                            content:
+                                "Ten gracz nie bierze udziału w tym konkursie.",
+                            flags: MessageFlags.Ephemeral,
+                        });
+                    }
+
+                    await logModeration(
+                        interaction,
+                        user.id,
+                        "USUNIĘCIE_Z_KONKURSU",
+                        reason,
+                        messageId
+                    );
+
+                    await refreshGiveaway(giveaway);
+
+                    return interaction.reply({
+                        content:
+                            `✅ Usunięto ${user} wyłącznie z konkursu **${escapeText(giveaway.prize)}**.\n` +
+                            `**Powód:** ${escapeText(reason)}\n` +
+                            `Nie wyrzucono go z serwera, nie zbanowano i nie zmieniono mu ról.`,
+                        flags: MessageFlags.Ephemeral,
+                        allowedMentions: { parse: [] },
+                    });
+                }
             }
         } catch (error) {
             console.error("[KONKURSY] Błąd interakcji:", error);
@@ -851,8 +691,7 @@ module.exports = (client) => {
                 !interaction.deferred
             ) {
                 await interaction.reply({
-                    content:
-                        "Wystąpił błąd. Sprawdź logi bota na Renderze.",
+                    content: "Wystąpił błąd. Sprawdź logi bota na Renderze.",
                     flags: MessageFlags.Ephemeral,
                 }).catch(() => {});
             } else if (
@@ -861,8 +700,7 @@ module.exports = (client) => {
                 !interaction.replied
             ) {
                 await interaction.editReply({
-                    content:
-                        "Wystąpił błąd. Sprawdź logi bota na Renderze.",
+                    content: "Wystąpił błąd. Sprawdź logi bota na Renderze.",
                 }).catch(() => {});
             }
         }
