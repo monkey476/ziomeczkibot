@@ -1,4 +1,3 @@
-
 const {
     SlashCommandBuilder,
     ContainerBuilder,
@@ -163,7 +162,7 @@ module.exports = (client) => {
         return result.rows[0].count;
     }
 
-    // Krótka karta konkursu — kolor zawsze zielony.
+    // Karta konkursu — wygląd LOWHUB.PL, zielony akcent.
     function buildCard(giveaway, participantCount, ended = false) {
         const endsAt = Number(giveaway.ends_at);
         const prize = escapeText(giveaway.prize);
@@ -177,8 +176,7 @@ module.exports = (client) => {
             .setAccentColor(GREEN)
             .addTextDisplayComponents(
                 new TextDisplayBuilder().setContent(
-                    `# 🟩 ${BRAND} • KONKURS\n` +
-                    `## 🎁 ${prize}`
+                    `# ${BRAND} • KONKURS`
                 )
             )
             .addSeparatorComponents(
@@ -186,12 +184,10 @@ module.exports = (client) => {
             )
             .addTextDisplayComponents(
                 new TextDisplayBuilder().setContent(
-                    `🏆 **Zwycięzcy:** ${winnerCount}  •  👥 **Uczestnicy:** ${participantCount}\n` +
-                    `👤 **Organizator:** <@${hostId}>`
+                    `**🎁 Nagroda:** ${prize}\n` +
+                    `👤 **Organizator:** <@${hostId}>\n` +
+                    `🏆 **Zwycięzcy:** ${winnerCount}  •  👥 **Uczestnicy:** ${participantCount}`
                 )
-            )
-            .addSeparatorComponents(
-                new SeparatorBuilder().setDivider(true)
             )
             .addTextDisplayComponents(
                 new TextDisplayBuilder().setContent(
@@ -293,7 +289,7 @@ module.exports = (client) => {
                 .setAccentColor(GREEN)
                 .addTextDisplayComponents(
                     new TextDisplayBuilder().setContent(
-                        `# 🟩 ${BRAND} • WYNIKI\n` +
+                        `# ${BRAND} • WYNIKI\n` +
                         `## 🏆 Konkurs zakończony`
                     )
                 )
