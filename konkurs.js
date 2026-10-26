@@ -252,7 +252,6 @@ function buildCard(giveaway, participantCount, ended = false) {
         );
 
     return [container];
-}
     }
 
     async function refreshGiveaway(giveaway, ended = false) {
