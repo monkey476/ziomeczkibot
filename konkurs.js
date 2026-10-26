@@ -27,6 +27,10 @@ module.exports = (client) => {
     const BRAND = "LOWHUB.PL";
     const JOIN_ID = "konkurs_join";
 
+    // Role uprawnione do tworzenia konkursów.
+    const ROLE_ALL = "1495094192957817025";
+    const ROLE_GIVEAWAY = "1540162111706103848";
+
     const commands = [
         new SlashCommandBuilder()
             .setName("konkurs")
@@ -108,6 +112,30 @@ module.exports = (client) => {
                 PRIMARY KEY (giveaway_id, user_id)
             )
         `);
+    }
+
+    function hasGiveawayPermission(interaction) {
+        const roles = interaction.member?.roles;
+
+        if (!roles) return false;
+
+        // Obsługa standardowego obiektu GuildMember.
+        if (roles.cache) {
+            return (
+                roles.cache.has(ROLE_ALL) ||
+                roles.cache.has(ROLE_GIVEAWAY)
+            );
+        }
+
+        // Awaryjna obsługa tablicy ról.
+        if (Array.isArray(roles)) {
+            return (
+                roles.includes(ROLE_ALL) ||
+                roles.includes(ROLE_GIVEAWAY)
+            );
+        }
+
+        return false;
     }
 
     function parseDuration(value) {
@@ -197,12 +225,12 @@ module.exports = (client) => {
                             (
                                 winners.length
                                     ? `**Wylosowani:** ${winners.map(id => `<@${id}>`).join(", ")}`
-                                    : "Brak uczestników — nie udało się wyłonić zwycięzcy."
+                                    : "Brak uczestników, nie udało się wyłonić zwycięzcy."
                             )
                         )
                         : (
-                            `**Koniec:** <t:${Math.floor(endsAt / 1000)}:F>\n` +
-                            `**Pozostały czas:** ${timestamp(endsAt)}`
+                            `**🏁 Koniec:** <t:${Math.floor(endsAt / 1000)}:F>\n` +
+                            `**⌛ Pozostały czas:** ${timestamp(endsAt)}`
                         )
                 )
             )
@@ -318,7 +346,7 @@ module.exports = (client) => {
         } else if (channel && channel.isTextBased() && !winners.length) {
             await channel.send({
                 content:
-                    `🏁 Konkurs **${escapeText(giveaway.prize)}** został zakończony, ale nikt nie wziął udziału.`,
+                    `🏁 Konkurs **${escapeText(giveaway.prize)}** został zakończony, ale nikt nie wziął udziału :(`,
                 allowedMentions: { parse: [] },
             }).catch(() => {});
         }
@@ -406,7 +434,7 @@ module.exports = (client) => {
                 return;
             }
 
-            // Dołączanie do konkursu.
+            // Dołączanie i wychodzenie z konkursu.
             if (
                 interaction.isButton() &&
                 interaction.customId.startsWith(`${JOIN_ID}:`)
@@ -431,21 +459,39 @@ module.exports = (client) => {
                     });
                 }
 
-                const inserted = await pool.query(
+                // Jeśli użytkownik już uczestniczy — usuń go z konkursu.
+                const existingEntry = await pool.query(
+                    `SELECT user_id
+                     FROM giveaway_entries
+                     WHERE giveaway_id = $1 AND user_id = $2`,
+                    [id, interaction.user.id]
+                );
+
+                if (existingEntry.rowCount > 0) {
+                    await pool.query(
+                        `DELETE FROM giveaway_entries
+                         WHERE giveaway_id = $1 AND user_id = $2`,
+                        [id, interaction.user.id]
+                    );
+
+                    await interaction.reply({
+                        content:
+                            `↩️ Wyszedłeś z konkursu **${escapeText(giveaway.prize)}**. Możesz dołączyć ponownie, klikając przycisk.`,
+                        flags: MessageFlags.Ephemeral,
+                    });
+
+                    await refreshGiveaway(giveaway);
+                    return;
+                }
+
+                // Jeśli użytkownik jeszcze nie uczestniczy — dodaj go.
+                await pool.query(
                     `INSERT INTO giveaway_entries
                         (giveaway_id, user_id, joined_at)
                      VALUES ($1, $2, $3)
-                     ON CONFLICT (giveaway_id, user_id) DO NOTHING
-                     RETURNING user_id`,
+                     ON CONFLICT (giveaway_id, user_id) DO NOTHING`,
                     [id, interaction.user.id, Date.now()]
                 );
-
-                if (!inserted.rowCount) {
-                    return interaction.reply({
-                        content: "Już bierzesz udział w tym konkursie!",
-                        flags: MessageFlags.Ephemeral,
-                    });
-                }
 
                 await interaction.reply({
                     content:
@@ -461,7 +507,7 @@ module.exports = (client) => {
 
             const { commandName } = interaction;
 
-            // Tworzenie konkursu.
+            // Tworzenie konkursu — wymagane perms.all lub perms.giveaway.
             if (commandName === "konkurs") {
                 if (
                     !interaction.inGuild() ||
@@ -470,6 +516,15 @@ module.exports = (client) => {
                     return interaction.reply({
                         content: "Tej komendy można używać tylko na serwerze.",
                         flags: MessageFlags.Ephemeral,
+                    });
+                }
+
+                if (!hasGiveawayPermission(interaction)) {
+                    return interaction.reply({
+                        content:
+                            "❌ Nie masz uprawnień do tworzenia konkursów. Wymagana rola: <@&1495094192957817025> lub <@&1540162111706103848>.",
+                        flags: MessageFlags.Ephemeral,
+                        allowedMentions: { parse: [] },
                     });
                 }
 
@@ -488,7 +543,7 @@ module.exports = (client) => {
                 if (!duration) {
                     return interaction.reply({
                         content:
-                            "Nieprawidłowy czas. Użyj `30m`, `2h` albo `1d` (maksymalnie 30 dni).",
+                            "Nieprawidłowy czas. Użyj `30m`, `2h` albo `1d` (maksymalnie 356 dni).",
                         flags: MessageFlags.Ephemeral,
                     });
                 }
