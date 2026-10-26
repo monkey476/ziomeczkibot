@@ -190,66 +190,69 @@ module.exports = (client) => {
         return result.rows[0].count;
     }
 
-    // Karta konkursu — wygląd LOWHUB.PL, zielony akcent.
-    function buildCard(giveaway, participantCount, ended = false) {
-        const endsAt = Number(giveaway.ends_at);
-        const prize = escapeText(giveaway.prize);
-        const winnerCount = Number(giveaway.winner_count);
-        const hostId = giveaway.host_id;
-        const winners = Array.isArray(giveaway.winners)
-            ? giveaway.winners
-            : [];
+// Karta konkursu — wygląd LOWHUB.PL, zielony akcent.
+function buildCard(giveaway, participantCount, ended = false) {
+    const endsAt = Number(giveaway.ends_at);
+    const prize = escapeText(giveaway.prize);
+    const winnerCount = Number(giveaway.winner_count);
+    const winners = Array.isArray(giveaway.winners)
+        ? giveaway.winners
+        : [];
 
-        const container = new ContainerBuilder()
-            .setAccentColor(GREEN)
-            .addTextDisplayComponents(
-                new TextDisplayBuilder().setContent(
-                    `# ${BRAND} • KONKURS`
-                )
+    const container = new ContainerBuilder()
+        .setAccentColor(GREEN)
+        .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+                `# ${BRAND} • KONKURS`
             )
-            .addSeparatorComponents(
-                new SeparatorBuilder().setDivider(true)
+        )
+        .addSeparatorComponents(
+            new SeparatorBuilder().setDivider(true)
+        )
+        .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+                `**🎁 Nagroda:** ${prize}\n` +
+                `👥 **Uczestnicy:** ${participantCount}\n` +
+                `🏆 **Zwycięzcy:** ${winnerCount}`
             )
-            .addTextDisplayComponents(
-                new TextDisplayBuilder().setContent(
-                    `**🎁 Nagroda:** ${prize}\n` +
-                    `👤 **Organizator:** <@${hostId}>\n` +
-                    `🏆 **Zwycięzcy:** ${winnerCount}  •  👥 **Uczestnicy:** ${participantCount}`
-                )
-            )
-            .addTextDisplayComponents(
-                new TextDisplayBuilder().setContent(
-                    ended
-                        ? (
-                            `### 🏁 Konkurs zakończony\n` +
-                            (
-                                winners.length
-                                    ? `**Wylosowani:** ${winners.map(id => `<@${id}>`).join(", ")}`
-                                    : "Brak uczestników, nie udało się wyłonić zwycięzcy."
-                            )
+        )
+        .addSeparatorComponents(
+            new SeparatorBuilder().setDivider(true)
+        )
+        .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+                ended
+                    ? (
+                        `### 🏁 Konkurs zakończony\n` +
+                        (
+                            winners.length
+                                ? `**Wylosowani:** ${winners.map(id => `<@${id}>`).join(", ")}`
+                                : "Brak uczestników, nie udało się wyłonić zwycięzcy."
                         )
-                        : (
-                            `**🏁 Koniec:** <t:${Math.floor(endsAt / 1000)}:F>\n` +
-                            `**⌛ Pozostały czas:** ${timestamp(endsAt)}`
-                        )
-                )
+                    )
+                    : (
+                        `**🏁 Koniec:** <t:${Math.floor(endsAt / 1000)}:F>\n` +
+                        `**⌛ Pozostały czas:** ${timestamp(endsAt)}`
+                    )
             )
-            .addActionRowComponents(
-                new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`${JOIN_ID}:${giveaway.message_id}`)
-                        .setLabel(ended ? "Konkurs zakończony" : "Weź udział")
-                        .setEmoji(ended ? "🏁" : "🎉")
-                        .setStyle(
-                            ended
-                                ? ButtonStyle.Secondary
-                                : ButtonStyle.Success
-                        )
-                        .setDisabled(ended)
-                )
-            );
+        )
+        .addActionRowComponents(
+            new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`${JOIN_ID}:${giveaway.message_id}`)
+                    .setLabel(ended ? "Konkurs zakończony" : "Weź udział")
+                    .setEmoji(ended ? "🏁" : "🎉")
+                    .setStyle(
+                        ended
+                            ? ButtonStyle.Secondary
+                            : ButtonStyle.Success
+                    )
+                    .setDisabled(ended)
+            )
+        );
 
-        return [container];
+    return [container];
+}
     }
 
     async function refreshGiveaway(giveaway, ended = false) {
