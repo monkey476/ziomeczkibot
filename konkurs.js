@@ -41,8 +41,13 @@ module.exports = (client) => {
                     .setRequired(true)
             )
             .addStringOption(o =>
-                o.setName("czas")
-                    .setDescription("Czas, np. 30m, 2h, 1d")
+                o.setName("data")
+                    .setDescription("Data zakończenia, np. 2026-11-05")
+                    .setRequired(true)
+            )
+            .addStringOption(o =>
+                o.setName("godzina")
+                    .setDescription("Godzina zakończenia, np. 18:30")
                     .setRequired(true)
             )
             .addIntegerOption(o =>
@@ -119,7 +124,6 @@ module.exports = (client) => {
 
         if (!roles) return false;
 
-        // Obsługa standardowego obiektu GuildMember.
         if (roles.cache) {
             return (
                 roles.cache.has(ROLE_ALL) ||
@@ -127,7 +131,6 @@ module.exports = (client) => {
             );
         }
 
-        // Awaryjna obsługa tablicy ról.
         if (Array.isArray(roles)) {
             return (
                 roles.includes(ROLE_ALL) ||
@@ -138,31 +141,107 @@ module.exports = (client) => {
         return false;
     }
 
-    function parseDuration(value) {
-        const match = value.trim().match(/^(\d+)\s*(m|h|d)$/i);
-        if (!match) return null;
+    // Zamienia datę i godzinę polską na timestamp.
+    function parseWarsawDateTime(dateValue, timeValue) {
+        const dateMatch = dateValue.match(
+            /^(\d{4})-(\d{2})-(\d{2})$/
+        );
 
-        const amount = Number(match[1]);
-        const unit = match[2].toLowerCase();
+        const timeMatch = timeValue.match(
+            /^([01]\d|2[0-3]):([0-5]\d)$/
+        );
 
-        if (!Number.isSafeInteger(amount) || amount < 1) return null;
+        if (!dateMatch || !timeMatch) return null;
 
-        const multiplier = {
-            m: 60_000,
-            h: 3_600_000,
-            d: 86_400_000,
-        }[unit];
+        const year = Number(dateMatch[1]);
+        const month = Number(dateMatch[2]);
+        const day = Number(dateMatch[3]);
+        const hour = Number(timeMatch[1]);
+        const minute = Number(timeMatch[2]);
 
-        const duration = amount * multiplier;
+        const desiredUTC = Date.UTC(
+            year,
+            month - 1,
+            day,
+            hour,
+            minute
+        );
+
+        const checkDate = new Date(desiredUTC);
 
         if (
-            !Number.isSafeInteger(duration) ||
-            duration > 356 * 86_400_000
+            checkDate.getUTCFullYear() !== year ||
+            checkDate.getUTCMonth() !== month - 1 ||
+            checkDate.getUTCDate() !== day
         ) {
             return null;
         }
 
-        return duration;
+        let timestamp = desiredUTC;
+
+        const formatter = new Intl.DateTimeFormat("en-GB", {
+            timeZone: "Europe/Warsaw",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            hourCycle: "h23",
+        });
+
+        for (let i = 0; i < 4; i++) {
+            const values = {};
+
+            for (
+                const part of formatter.formatToParts(
+                    new Date(timestamp)
+                )
+            ) {
+                if (part.type !== "literal") {
+                    values[part.type] = Number(part.value);
+                }
+            }
+
+            const actualAsUTC = Date.UTC(
+                values.year,
+                values.month - 1,
+                values.day,
+                values.hour,
+                values.minute
+            );
+
+            const difference = desiredUTC - actualAsUTC;
+
+            if (difference === 0) break;
+
+            timestamp += difference;
+        }
+
+        const finalValues = {};
+
+        for (
+            const part of formatter.formatToParts(
+                new Date(timestamp)
+            )
+        ) {
+            if (part.type !== "literal") {
+                finalValues[part.type] = Number(part.value);
+            }
+        }
+
+        // Sprawdza również nieistniejące godziny przy zmianie czasu.
+        if (
+            finalValues.year !== year ||
+            finalValues.month !== month ||
+            finalValues.day !== day ||
+            finalValues.hour !== hour ||
+            finalValues.minute !== minute ||
+            timestamp <= Date.now()
+        ) {
+            return null;
+        }
+
+        return timestamp;
     }
 
     function timestamp(ms) {
@@ -190,68 +269,73 @@ module.exports = (client) => {
         return result.rows[0].count;
     }
 
-// Karta konkursu — wygląd LOWHUB.PL, zielony akcent.
-function buildCard(giveaway, participantCount, ended = false) {
-    const endsAt = Number(giveaway.ends_at);
-    const prize = escapeText(giveaway.prize);
-    const winnerCount = Number(giveaway.winner_count);
-    const winners = Array.isArray(giveaway.winners)
-        ? giveaway.winners
-        : [];
+    // Karta konkursu — wygląd LOWHUB.PL.
+    function buildCard(giveaway, participantCount, ended = false) {
+        const endsAt = Number(giveaway.ends_at);
+        const prize = escapeText(giveaway.prize);
+        const winnerCount = Number(giveaway.winner_count);
 
-    const container = new ContainerBuilder()
-        .setAccentColor(GREEN)
-        .addTextDisplayComponents(
-            new TextDisplayBuilder().setContent(
-                `# ${BRAND} • KONKURS`
+        const winners = Array.isArray(giveaway.winners)
+            ? giveaway.winners
+            : [];
+
+        const container = new ContainerBuilder()
+            .setAccentColor(GREEN)
+            .addTextDisplayComponents(
+                new TextDisplayBuilder().setContent(
+                    `# ${BRAND} • KONKURS`
+                )
             )
-        )
-        .addSeparatorComponents(
-            new SeparatorBuilder().setDivider(true)
-        )
-        .addTextDisplayComponents(
-            new TextDisplayBuilder().setContent(
-                `**🎁 Nagroda:** ${prize}\n` +
-                `👥 **Uczestnicy:** ${participantCount}\n` +
-                `🏆 **Zwycięzcy:** ${winnerCount}`
+            .addSeparatorComponents(
+                new SeparatorBuilder().setDivider(true)
             )
-        )
-        .addSeparatorComponents(
-            new SeparatorBuilder().setDivider(true)
-        )
-        .addTextDisplayComponents(
-            new TextDisplayBuilder().setContent(
-                ended
-                    ? (
-                        `### 🏁 Konkurs zakończony\n` +
-                        (
-                            winners.length
-                                ? `**Wylosowani:** ${winners.map(id => `<@${id}>`).join(", ")}`
-                                : "Brak uczestników, nie udało się wyłonić zwycięzcy."
+            .addTextDisplayComponents(
+                new TextDisplayBuilder().setContent(
+                    `**🎁 Nagroda:** ${prize}\n` +
+                    `👥 **Uczestnicy:** ${participantCount}\n` +
+                    `🏆 **Zwycięzcy:** ${winnerCount}`
+                )
+            )
+            .addSeparatorComponents(
+                new SeparatorBuilder().setDivider(true)
+            )
+            .addTextDisplayComponents(
+                new TextDisplayBuilder().setContent(
+                    ended
+                        ? (
+                            `### 🏁 Konkurs zakończony\n` +
+                            (
+                                winners.length
+                                    ? `**Wylosowani:** ${winners.map(id => `<@${id}>`).join(", ")}`
+                                    : "Brak uczestników, nie udało się wyłonić zwycięzcy."
+                            )
                         )
-                    )
-                    : (
-                        `**🏁 Koniec:** <t:${Math.floor(endsAt / 1000)}:F>\n` +
-                        `**⌛ Pozostały czas:** ${timestamp(endsAt)}`
-                    )
+                        : (
+                            `**🏁 Koniec:** <t:${Math.floor(endsAt / 1000)}:F>\n` +
+                            `**⌛ Pozostały czas:** ${timestamp(endsAt)}`
+                        )
+                )
             )
-        )
-        .addActionRowComponents(
-            new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`${JOIN_ID}:${giveaway.message_id}`)
-                    .setLabel(ended ? "Konkurs zakończony" : "Weź udział")
-                    .setEmoji(ended ? "🏁" : "🎉")
-                    .setStyle(
-                        ended
-                            ? ButtonStyle.Secondary
-                            : ButtonStyle.Success
-                    )
-                    .setDisabled(ended)
-            )
-        );
+            .addActionRowComponents(
+                new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(
+                            `${JOIN_ID}:${giveaway.message_id}`
+                        )
+                        .setLabel(
+                            ended ? "Konkurs zakończony" : "Weź udział"
+                        )
+                        .setEmoji(ended ? "🏁" : "🎉")
+                        .setStyle(
+                            ended
+                                ? ButtonStyle.Secondary
+                                : ButtonStyle.Success
+                        )
+                        .setDisabled(ended)
+                )
+            );
 
-    return [container];
+        return [container];
     }
 
     async function refreshGiveaway(giveaway, ended = false) {
@@ -259,7 +343,9 @@ function buildCard(giveaway, participantCount, ended = false) {
             .fetch(giveaway.channel_id)
             .catch(() => null);
 
-        if (!channel || !channel.isTextBased() || !channel.messages) return;
+        if (!channel || !channel.isTextBased() || !channel.messages) {
+            return;
+        }
 
         const message = await channel.messages
             .fetch(giveaway.message_id)
@@ -296,7 +382,10 @@ function buildCard(giveaway, participantCount, ended = false) {
             [ids[i], ids[j]] = [ids[j], ids[i]];
         }
 
-        const winners = ids.slice(0, Number(giveaway.winner_count));
+        const winners = ids.slice(
+            0,
+            Number(giveaway.winner_count)
+        );
 
         await pool.query(
             `UPDATE giveaways
@@ -331,7 +420,9 @@ function buildCard(giveaway, participantCount, ended = false) {
                         `**🎁 Nagroda:** ${escapeText(giveaway.prize)}\n` +
                         `**👥 Uczestnicy:** ${ids.length}\n\n` +
                         `**🥇 Zwycięzcy:**\n` +
-                        winners.map((id, index) => `${index + 1}. <@${id}>`).join("\n")
+                        winners.map(
+                            (id, index) => `${index + 1}. <@${id}>`
+                        ).join("\n")
                     )
                 );
 
@@ -358,6 +449,7 @@ function buildCard(giveaway, participantCount, ended = false) {
 
     async function checkExpiredGiveaways() {
         if (checking) return;
+
         checking = true;
 
         try {
@@ -372,7 +464,10 @@ function buildCard(giveaway, participantCount, ended = false) {
                 await drawWinners(giveaway);
             }
         } catch (error) {
-            console.error("[KONKURSY] Błąd sprawdzania czasu:", error);
+            console.error(
+                "[KONKURSY] Błąd sprawdzania czasu:",
+                error
+            );
         } finally {
             checking = false;
         }
@@ -386,13 +481,17 @@ function buildCard(giveaway, participantCount, ended = false) {
             const guild = client.guilds.cache.first();
 
             if (!guild) {
-                throw new Error("Bot nie jest na żadnym serwerze Discord.");
+                throw new Error(
+                    "Bot nie jest na żadnym serwerze Discord."
+                );
             }
 
             const existing = await guild.commands.fetch();
 
             for (const command of commands) {
-                const old = existing.find(c => c.name === command.name);
+                const old = existing.find(
+                    c => c.name === command.name
+                );
 
                 if (old) {
                     await old.edit(command);
@@ -406,7 +505,10 @@ function buildCard(giveaway, participantCount, ended = false) {
             );
 
             initialized = true;
-            console.log("[KONKURSY] Baza połączona, system uruchomiony.");
+
+            console.log(
+                "[KONKURSY] Baza połączona, system uruchomiony."
+            );
 
             await checkExpiredGiveaways();
 
@@ -415,7 +517,10 @@ function buildCard(giveaway, participantCount, ended = false) {
                 setInterval(checkExpiredGiveaways, 15_000);
             }
         } catch (error) {
-            console.error("[KONKURSY] Błąd uruchamiania:", error);
+            console.error(
+                "[KONKURSY] Błąd uruchamiania:",
+                error
+            );
         }
     });
 
@@ -426,13 +531,18 @@ function buildCard(giveaway, participantCount, ended = false) {
                     interaction.isChatInputCommand() ||
                     interaction.isButton()
                 ) {
-                    if (!interaction.replied && !interaction.deferred) {
+                    if (
+                        !interaction.replied &&
+                        !interaction.deferred
+                    ) {
                         await interaction.reply({
-                            content: "System konkursów jeszcze się uruchamia. Spróbuj za chwilę.",
+                            content:
+                                "System konkursów jeszcze się uruchamia. Spróbuj za chwilę.",
                             flags: MessageFlags.Ephemeral,
                         });
                     }
                 }
+
                 return;
             }
 
@@ -441,7 +551,9 @@ function buildCard(giveaway, participantCount, ended = false) {
                 interaction.isButton() &&
                 interaction.customId.startsWith(`${JOIN_ID}:`)
             ) {
-                const id = interaction.customId.slice(JOIN_ID.length + 1);
+                const id = interaction.customId.slice(
+                    JOIN_ID.length + 1
+                );
 
                 const result = await pool.query(
                     "SELECT * FROM giveaways WHERE message_id = $1",
@@ -483,6 +595,7 @@ function buildCard(giveaway, participantCount, ended = false) {
                     });
 
                     await refreshGiveaway(giveaway);
+
                     return;
                 }
 
@@ -502,6 +615,7 @@ function buildCard(giveaway, participantCount, ended = false) {
                 });
 
                 await refreshGiveaway(giveaway);
+
                 return;
             }
 
@@ -516,7 +630,8 @@ function buildCard(giveaway, participantCount, ended = false) {
                     !interaction.channel?.isTextBased()
                 ) {
                     return interaction.reply({
-                        content: "Tej komendy można używać tylko na serwerze.",
+                        content:
+                            "Tej komendy można używać tylko na serwerze.",
                         flags: MessageFlags.Ephemeral,
                     });
                 }
@@ -534,25 +649,35 @@ function buildCard(giveaway, participantCount, ended = false) {
                     .getString("nagroda", true)
                     .trim();
 
-                const durationInput = interaction.options
-                    .getString("czas", true);
+                const dateInput = interaction.options
+                    .getString("data", true)
+                    .trim();
+
+                const timeInput = interaction.options
+                    .getString("godzina", true)
+                    .trim();
 
                 const winnerCount = interaction.options
                     .getInteger("zwyciezcy", true);
 
-                const duration = parseDuration(durationInput);
+                const endsAt = parseWarsawDateTime(
+                    dateInput,
+                    timeInput
+                );
 
-                if (!duration) {
+                if (!endsAt) {
                     return interaction.reply({
                         content:
-                            "Nieprawidłowy czas. Użyj `30m`, `2h` albo `1d` (maksymalnie 356 dni).",
+                            "❌ Nieprawidłowa data lub godzina albo termin już minął. " +
+                            "Użyj daty `RRRR-MM-DD` i godziny `GG:MM`, np. `2026-11-05` oraz `18:30`. Czas musi być przyszły.",
                         flags: MessageFlags.Ephemeral,
                     });
                 }
 
                 if (!prize || prize.length > 200) {
                     return interaction.reply({
-                        content: "Nagroda musi mieć od 1 do 200 znaków.",
+                        content:
+                            "Nagroda musi mieć od 1 do 200 znaków.",
                         flags: MessageFlags.Ephemeral,
                     });
                 }
@@ -560,8 +685,6 @@ function buildCard(giveaway, participantCount, ended = false) {
                 await interaction.deferReply({
                     flags: MessageFlags.Ephemeral,
                 });
-
-                const endsAt = Date.now() + duration;
 
                 const draft = {
                     message_id: "pending",
@@ -605,7 +728,7 @@ function buildCard(giveaway, participantCount, ended = false) {
                     content:
                         `✅ Konkurs został utworzony!\n` +
                         `**Nagroda:** ${escapeText(prize)}\n` +
-                        `**Koniec:** ${timestamp(endsAt)}\n` +
+                        `**Koniec:** <t:${Math.floor(endsAt / 1000)}:F>\n` +
                         `**ID wiadomości:** \`${message.id}\``,
                 });
 
@@ -623,7 +746,8 @@ function buildCard(giveaway, participantCount, ended = false) {
                     )
                 ) {
                     return interaction.reply({
-                        content: "Potrzebujesz uprawnienia **Zarządzanie serwerem**.",
+                        content:
+                            "Potrzebujesz uprawnienia **Zarządzanie serwerem**.",
                         flags: MessageFlags.Ephemeral,
                     });
                 }
@@ -643,7 +767,8 @@ function buildCard(giveaway, participantCount, ended = false) {
 
                 if (!giveaway) {
                     return interaction.reply({
-                        content: "Nie znaleziono konkursu o takim ID na tym serwerze.",
+                        content:
+                            "Nie znaleziono konkursu o takim ID na tym serwerze.",
                         flags: MessageFlags.Ephemeral,
                     });
                 }
@@ -696,7 +821,8 @@ function buildCard(giveaway, participantCount, ended = false) {
 
                 if (!giveaway) {
                     return interaction.reply({
-                        content: "Nie znaleziono konkursu o takim ID na tym serwerze.",
+                        content:
+                            "Nie znaleziono konkursu o takim ID na tym serwerze.",
                         flags: MessageFlags.Ephemeral,
                     });
                 }
@@ -711,7 +837,7 @@ function buildCard(giveaway, participantCount, ended = false) {
                         `**👥 Uczestnicy:** ${count}\n` +
                         `**🏆 Liczba zwycięzców:** ${giveaway.winner_count}\n` +
                         `**👤 Organizator:** <@${giveaway.host_id}>\n` +
-                        `**🕒 Koniec:** ${timestamp(Number(giveaway.ends_at))}\n` +
+                        `**🕒 Koniec:** <t:${Math.floor(Number(giveaway.ends_at) / 1000)}:F>\n` +
                         `**🆔 ID wiadomości:** \`${giveaway.message_id}\``,
                     flags: MessageFlags.Ephemeral,
                 });
@@ -725,7 +851,8 @@ function buildCard(giveaway, participantCount, ended = false) {
                 !interaction.deferred
             ) {
                 await interaction.reply({
-                    content: "Wystąpił błąd. Sprawdź logi bota na Renderze.",
+                    content:
+                        "Wystąpił błąd. Sprawdź logi bota na Renderze.",
                     flags: MessageFlags.Ephemeral,
                 }).catch(() => {});
             } else if (
@@ -734,7 +861,8 @@ function buildCard(giveaway, participantCount, ended = false) {
                 !interaction.replied
             ) {
                 await interaction.editReply({
-                    content: "Wystąpił błąd. Sprawdź logi bota na Renderze.",
+                    content:
+                        "Wystąpił błąd. Sprawdź logi bota na Renderze.",
                 }).catch(() => {});
             }
         }
